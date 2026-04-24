@@ -237,7 +237,18 @@ static void handlePacket(const WMBusPacket& pkt)
                     log_i("  Releve precedent = %.3f m3", reading.target_m3);
                 mqtt.publishMeterReading(METERS[i].serial, reading, pkt);
             } else if (reading.encrypted && !reading.decrypted) {
-                log_w("  Trame chiffree — cle AES requise");
+                log_w("  Trame chiffree — tentative cles connues...");
+                if (parser.tryKnownKeys(pkt, reading)) {
+                    log_i("  *** CLE AES TROUVEE pour compteur %d ! ***", i + 1);
+                    log_i("  *** Cle = %s ***", reading.foundKey);
+                    log_i("  CONSOMMATION = %.3f m3", reading.total_m3);
+                    if (reading.target_m3 > 0.0)
+                        log_i("  Releve precedent = %.3f m3", reading.target_m3);
+                    mqtt.publishKeyFound(METERS[i].serial, reading.foundKey);
+                    mqtt.publishMeterReading(METERS[i].serial, reading, pkt);
+                } else {
+                    log_w("  Aucune cle connue ne fonctionne — cle individuelle requise");
+                }
             } else {
                 log_w("  Payload non decode");
             }

@@ -264,3 +264,28 @@ void MQTTManager::publishHADiscovery(uint32_t configSerial)
     serializeJson(doc, buf, sizeof(buf));
     _mqtt.publish(topic, buf, true);
 }
+
+void MQTTManager::publishKeyFound(uint32_t configSerial, const char* hexKey)
+{
+    if (!_mqtt.connected() || !hexKey) return;
+
+    char serialStr[12];
+    snprintf(serialStr, sizeof(serialStr), "%lu", configSerial);
+
+    char timestamp[32] = "unknown";
+    struct tm t;
+    if (getLocalTime(&t, 0))
+        strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", &t);
+
+    char topic[80];
+    snprintf(topic, sizeof(topic), "%s/%s/key_found", _baseTopic, serialStr);
+
+    JsonDocument doc;
+    doc["serial"]    = configSerial;
+    doc["aes_key"]   = hexKey;
+    doc["timestamp"] = timestamp;
+
+    char buf[256];
+    serializeJson(doc, buf, sizeof(buf));
+    _mqtt.publish(topic, buf, true);
+}

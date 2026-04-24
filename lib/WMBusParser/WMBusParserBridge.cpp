@@ -22,18 +22,17 @@ const char* WMBusParserBridge::_findKey(uint32_t serialBCD)
     return nullptr;
 }
 
-bool WMBusParserBridge::parse(const WMBusPacket& pkt, MeterReading& out)
+bool WMBusParserBridge::_tryParseWithKey(const WMBusPacket& pkt, const char* hexKey,
+                                         MeterReading& out)
 {
     out = MeterReading{};
 
     if (pkt.dataLen < 11) return false;
 
     std::vector<uchar> frame(pkt.data, pkt.data + pkt.dataLen);
-
     removeAnyDLLCRCs(frame);
 
     MeterKeys mk;
-    const char* hexKey = _findKey(pkt.serialBCD);
     if (hexKey && strlen(hexKey) == 32) {
         hex2bin(hexKey, &mk.confidentiality_key);
     }
@@ -47,11 +46,9 @@ bool WMBusParserBridge::parse(const WMBusPacket& pkt, MeterReading& out)
     out.encrypted = (telegram.tpl_sec_mode != TPLSecurityMode::NoSecurity);
     out.decrypted = out.encrypted && !telegram.decryption_failed;
 
-    if (out.encrypted && telegram.decryption_failed) {
+    if (out.encrypted && telegram.decryption_failed)
         return true;
-    }
 
-    // Extract total volume (VIFRange::Volume → m3)
     std::string volumeKey;
     if (findKey(MeasurementType::Instantaneous, VIFRange::Volume,
                 StorageNr(0), TariffNr(0), &volumeKey,
@@ -63,7 +60,6 @@ bool WMBusParserBridge::parse(const WMBusPacket& pkt, MeterReading& out)
         }
     }
 
-    // Extract target/previous period volume (storage 1)
     std::string targetKey;
     if (findKey(MeasurementType::Instantaneous, VIFRange::Volume,
                 StorageNr(1), TariffNr(0), &targetKey,
@@ -74,4 +70,37 @@ bool WMBusParserBridge::parse(const WMBusPacket& pkt, MeterReading& out)
     }
 
     return true;
+}
+
+bool WMBusParserBridge::parse(const WMBusPacket& pkt, MeterReading& out)
+{
+    const char* hexKey = _findKey(pkt.serialBCD);
+    return _tryParseWithKey(pkt, hexKey, out);
+}
+
+static const char* const KNOWN_KEYS[] = {
+    "00000000000000000000000000000000",
+    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    "0102030405060708090A0B0C0D0E0F10",
+    "A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1",
+    "00112233445566778899AABBCCDDEEFF",
+};
+static constexpr int KNOWN_KEY_COUNT = sizeof(KNOWN_KEYS) / sizeof(KNOWN_KEYS[0]);
+
+bool WMBusParserBridge::tryKnownKeys(const WMBusPacket& pkt, MeterReading& out)
+{
+    for (int i = 0; i < KNOWN_KEY_COUNT; i++) {
+        MeterReading attempt;
+        if (!_tryParseWithKey(pkt, KNOWN_KEYS[i], attempt))
+            continue;
+
+        if (attempt.encrypted && attempt.decrypted && attempt.valid) {
+            out = attempt;
+            out.keyFound = true;
+            strncpy(out.foundKey, KNOWN_KEYS[i], 32);
+            out.foundKey[32] = '\0';
+            return true;
+        }
+    }
+    return false;
 }

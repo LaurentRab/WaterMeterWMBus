@@ -52,6 +52,7 @@ public:
     void publishMeterReading(uint32_t configSerial, const MeterReading& reading,
                              const WMBusPacket& pkt);
     void publishHADiscovery(uint32_t configSerial);
+    void publishKeyFound(uint32_t configSerial, const char* hexKey);
 
     bool connected() { return _mqtt.connected(); }
     bool publish(const char* topic, const char* payload, bool retained = false);
