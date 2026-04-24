@@ -183,8 +183,10 @@ static void handlePacket(const WMBusPacket& pkt)
 
     ledOn(); delay(50); ledOff();
 
+    bool matched = false;
     for (int i = 0; i < METER_COUNT; i++) {
         if (!matchSerial(pkt.serialBCD, METERS[i].serial)) continue;
+        matched = true;
 
         MeterStat& s = meterStats[i];
         s.found = true;
@@ -224,12 +226,9 @@ static void handlePacket(const WMBusPacket& pkt)
 
     mqtt.publishScanPacket(pkt, totalPackets);
 
-    // Arrêt immédiat dès que tous les compteurs configurés sont trouvés
-    bool nowAllFound = true;
-    for (int i = 0; i < METER_COUNT; i++)
-        if (METERS[i].serial != 0 && !meterStats[i].found) { nowAllFound = false; break; }
-    if (nowAllFound && scanPhase != SCAN_DONE) {
-        log_i("=== Tous les compteurs trouvés — scan terminé ===");
+    // Arrêt immédiat dès qu'un compteur configuré est détecté
+    if (matched && scanPhase != SCAN_DONE) {
+        log_i("=== Compteur détecté — scan terminé ===");
         publishResults();
         scanPhase = SCAN_DONE;
     }
