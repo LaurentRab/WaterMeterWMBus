@@ -118,4 +118,8 @@ pio device monitor
 
 ## Licence
 
-MIT — voir [LICENSE](LICENSE).
+GPL-3.0-or-later — voir [LICENSE](LICENSE).
+
+Ce projet intègre du code issu de [wmbusmeters](https://github.com/wmbusmeters/wmbusmeters) (Fredrik Öhrström, GPL-3.0-or-later), ainsi que [tiny-AES128-C](https://github.com/kokke/tiny-AES128-C) (CC0 / domaine public).
+
+Le code original de ce projet (hors `lib/WMBusParser/`) est Copyright (C) 2026 Laurent Rabret.
