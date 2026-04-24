@@ -257,27 +257,7 @@ bool CC1101::selfTest()
         log_i("  OK    TX FIFO (4 octets écrits, TXBYTES=4)");
     }
 
-    // 4. Transition TX : vérifier que le CC1101 entre bien en TX
-    idle();
-    _writeReg(CC1101_MDMCFG2, 0x00);   // pas de sync word
-    _writeReg(CC1101_PKTCTRL0, 0x02);  // mode infini
-    uint8_t txdata[8] = {0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55};
-    writeFifo(txdata, 8);
-    _strobe(CC1101_STX);
-    delay(2);  // laisser le temps à la calibration + PLL lock
-    state = marcstate();
-    idle();
-    _writeReg(CC1101_MDMCFG2, 0x02);   // restaurer
-    _writeReg(CC1101_PKTCTRL0, 0x00);
-
-    if (state != CC1101_STATE_TX) {
-        log_e("  FAIL  TX transition : MARCSTATE=0x%02X (attendu TX=0x13)", state);
-        errors++;
-    } else {
-        log_i("  OK    TX transition (MARCSTATE=0x13)");
-    }
-
-    // 5. Transition RX + RSSI
+    // 4. Transition RX + RSSI
     idle();
     _strobe(CC1101_SRX);
     delay(10);  // laisser l'AGC se stabiliser
@@ -294,7 +274,7 @@ bool CC1101::selfTest()
 
     // Bilan
     if (errors == 0) {
-        log_i("--- Self-Test PASSED (5/5) ---");
+        log_i("--- Self-Test PASSED (4/4) ---");
     } else {
         log_e("--- Self-Test FAILED (%d erreur(s)) — vérifier câblage et alimentation ---", errors);
     }

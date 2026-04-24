@@ -102,7 +102,7 @@ public:
     // Passe en IDLE et vide les FIFOs
     void idle();
 
-    // Test matériel complet : SPI loopback, FIFO, TX/RX transitions
+    // Test matériel : SPI loopback, FIFO write, RX transition
     // Retourne true si tout est OK.
     bool selfTest();
 
