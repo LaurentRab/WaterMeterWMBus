@@ -176,7 +176,7 @@ static void handlePacket(const WMBusPacket& pkt)
     WMBus::decodeMfr(pkt.mField, mfr);
 
     const char* modeName = (pkt.mode == WMBUS_T_MODE) ? "T" : "S";
-    log_d("wMBus [%s-mode] serial=%08lu mfr=%s type=0x%02X RSSI=%d CRC=%s",
+    log_i("wMBus [%s-mode] serial=%08lu mfr=%s type=0x%02X RSSI=%d CRC=%s",
           modeName, pkt.serialBCD, mfr, pkt.deviceType, pkt.rssi,
           pkt.crcOk ? "OK" : "FAIL");
 
