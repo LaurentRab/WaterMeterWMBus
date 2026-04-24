@@ -4,18 +4,19 @@
 #include "CC1101.h"
 #include "WMBus.h"
 #include "MQTTManager.h"
+#include "WMBusParserBridge.h"
 
 
 // ============================================================
 //  WaterMeter — ESP32-C3 + CC1101
 //  Wireless M-Bus (EN 13757-4) — écoute passive 868 MHz
-//  Phase 1 : découverte des compteurs configurés
 // ============================================================
 
-CC1101      radio(CC1101_CSN, CC1101_GDO0, CC1101_SCK, CC1101_MOSI, CC1101_MISO);
-WMBus       wmbus(radio);
-MQTTManager mqtt(MQTT_SERVER, MQTT_PORT, MQTT_USER, MQTT_PASS,
-                 MQTT_CLIENT_ID, MQTT_BASE_TOPIC, METER_COUNT);
+CC1101            radio(CC1101_CSN, CC1101_GDO0, CC1101_SCK, CC1101_MOSI, CC1101_MISO);
+WMBus             wmbus(radio);
+MQTTManager       mqtt(MQTT_SERVER, MQTT_PORT, MQTT_USER, MQTT_PASS,
+                       MQTT_CLIENT_ID, MQTT_BASE_TOPIC, METER_COUNT);
+WMBusParserBridge parser;
 
 static constexpr uint32_t SCAN_T_MS = (uint32_t)SCAN_LISTEN_T_SEC * 1000UL;
 static constexpr uint32_t SCAN_S_MS = (uint32_t)SCAN_LISTEN_S_SEC * 1000UL;
@@ -198,6 +199,21 @@ static void handlePacket(const WMBusPacket& pkt)
         log_i("  COMPTEUR %d DETECTE !", i + 1);
         log_i("  serial=%08lu  mfr=%s  %s-mode", pkt.serialBCD, mfr, modeName);
         log_i("  RSSI=%d dBm  CRC=%s  count=%u", pkt.rssi, pkt.crcOk ? "OK" : "FAIL", s.count);
+
+        MeterReading reading;
+        if (parser.parse(pkt, reading)) {
+            if (reading.valid) {
+                log_i("  CONSOMMATION = %.3f m3", reading.total_m3);
+                if (reading.target_m3 > 0.0)
+                    log_i("  Releve precedent = %.3f m3", reading.target_m3);
+                mqtt.publishMeterReading(METERS[i].serial, reading, pkt);
+            } else if (reading.encrypted && !reading.decrypted) {
+                log_w("  Trame chiffree — cle AES requise");
+            } else {
+                log_w("  Payload non decode");
+            }
+        }
+
         log_i("*********************************************");
 
         ledOn(); delay(500); ledOff();
@@ -276,10 +292,14 @@ void setup()
     ledOff();
 
     log_i("==============================");
-    log_i("  WaterMeter v3.0  wMBus");
+    log_i("  WaterMeter v4.0  wMBus");
     log_i("  ESP32-C3 + CC1101 868 MHz");
-    log_i("  Phase 1 : découverte");
     log_i("==============================");
+
+    if (strlen(METER_1_KEY) == 32) parser.setKey(METER_1_SERIAL, METER_1_KEY);
+#if METER_COUNT >= 2
+    if (strlen(METER_2_KEY) == 32) parser.setKey(METER_2_SERIAL, METER_2_KEY);
+#endif
 
     if (!radio.begin()) {
         log_e("CC1101 non détecté — SOS LED");
@@ -323,6 +343,11 @@ void setup()
 
     log_i("Scan : T-mode %us + S-mode %us + pause %us",
           SCAN_LISTEN_T_SEC, SCAN_LISTEN_S_SEC, SCAN_PAUSE_SEC);
+
+    for (int i = 0; i < METER_COUNT; i++) {
+        if (METERS[i].serial != 0)
+            mqtt.publishHADiscovery(METERS[i].serial);
+    }
 
     mqtt.publish("watermeter/scan/status", "scanning_t", true);
     scanPhase = SCAN_T;
@@ -380,14 +405,12 @@ void loop()
             for (int i = 0; i < METER_COUNT; i++)
                 if (METERS[i].serial != 0 && !meterStats[i].found) { allFound = false; break; }
 
-            if (allFound) {
-                log_i("=== Tous les compteurs trouvés ! ===");
-                scanPhase = SCAN_DONE;
-            } else {
-                mqtt.publishScanStatus("pause");
-                scanPhase = SCAN_PAUSE;
-                phaseDeadline = millis() + PAUSE_MS;
-            }
+            if (allFound)
+                log_i("=== Tous les compteurs trouves — scan continu ===");
+
+            mqtt.publishScanStatus("pause");
+            scanPhase = SCAN_PAUSE;
+            phaseDeadline = millis() + PAUSE_MS;
         }
         break;
     }

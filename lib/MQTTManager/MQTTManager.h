@@ -4,6 +4,7 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include "../WMBus/WMBus.h"
+#include "../WMBusParser/WMBusParserBridge.h"
 
 static constexpr uint8_t MQTT_MAX_METERS = 4;
 
@@ -31,6 +32,9 @@ public:
     void publishScanStatus(const char* status);
     void publishScanPacket(const WMBusPacket& pkt, uint32_t totalCount);
     void publishMeterDetected(uint32_t configSerial, const WMBusPacket& pkt);
+    void publishMeterReading(uint32_t configSerial, const MeterReading& reading,
+                             const WMBusPacket& pkt);
+    void publishHADiscovery(uint32_t configSerial);
 
     bool connected() { return _mqtt.connected(); }
     bool publish(const char* topic, const char* payload, bool retained = false);

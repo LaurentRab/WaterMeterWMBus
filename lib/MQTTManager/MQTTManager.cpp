@@ -163,3 +163,84 @@ void MQTTManager::publishMeterDetected(uint32_t configSerial, const WMBusPacket&
     serializeJson(doc, buf, sizeof(buf));
     _mqtt.publish(topic, buf, true);
 }
+
+void MQTTManager::publishMeterReading(uint32_t configSerial,
+                                       const MeterReading& reading,
+                                       const WMBusPacket& pkt)
+{
+    if (!_mqtt.connected()) return;
+
+    char serialStr[12];
+    snprintf(serialStr, sizeof(serialStr), "%lu", configSerial);
+
+    char mfr[4];
+    WMBus::decodeMfr(pkt.mField, mfr);
+
+    char timestamp[32] = "unknown";
+    struct tm t;
+    if (getLocalTime(&t, 0))
+        strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", &t);
+
+    // Topic principal : JSON complet
+    char topic[80];
+    snprintf(topic, sizeof(topic), "%s/%s/state", _baseTopic, serialStr);
+
+    JsonDocument doc;
+    doc["total_m3"]     = serialized(String(reading.total_m3, 3));
+    doc["target_m3"]    = serialized(String(reading.target_m3, 3));
+    doc["rssi"]         = pkt.rssi;
+    doc["mode"]         = (pkt.mode == WMBUS_T_MODE) ? "T" : "S";
+    doc["manufacturer"] = mfr;
+    doc["encrypted"]    = reading.encrypted;
+    doc["timestamp"]    = timestamp;
+
+    char buf[300];
+    serializeJson(doc, buf, sizeof(buf));
+    _mqtt.publish(topic, buf, true);
+
+    // Valeur numérique seule (pour Home Assistant)
+    char valBuf[16];
+    snprintf(topic, sizeof(topic), "%s/%s/total_m3", _baseTopic, serialStr);
+    snprintf(valBuf, sizeof(valBuf), "%.3f", reading.total_m3);
+    _mqtt.publish(topic, valBuf, true);
+
+    if (reading.target_m3 > 0.0) {
+        snprintf(topic, sizeof(topic), "%s/%s/target_m3", _baseTopic, serialStr);
+        snprintf(valBuf, sizeof(valBuf), "%.3f", reading.target_m3);
+        _mqtt.publish(topic, valBuf, true);
+    }
+}
+
+void MQTTManager::publishHADiscovery(uint32_t configSerial)
+{
+    if (!_mqtt.connected()) return;
+
+    char serialStr[12];
+    snprintf(serialStr, sizeof(serialStr), "%lu", configSerial);
+
+    char uid[32];
+    snprintf(uid, sizeof(uid), "watermeter_%s", serialStr);
+
+    char topic[120];
+    snprintf(topic, sizeof(topic),
+             "homeassistant/sensor/%s_total/config", uid);
+
+    JsonDocument doc;
+    doc["name"]                = "Water Total";
+    doc["unique_id"]           = String(uid) + "_total";
+    doc["state_topic"]         = String(_baseTopic) + "/" + serialStr + "/total_m3";
+    doc["unit_of_measurement"] = "m³";
+    doc["device_class"]        = "water";
+    doc["state_class"]         = "total_increasing";
+    doc["icon"]                = "mdi:water-pump";
+
+    JsonObject dev = doc["device"].to<JsonObject>();
+    dev["identifiers"][0] = uid;
+    dev["name"]           = String("Water Meter ") + serialStr;
+    dev["manufacturer"]   = "ista";
+    dev["model"]          = "wMBus";
+
+    char buf[512];
+    serializeJson(doc, buf, sizeof(buf));
+    _mqtt.publish(topic, buf, true);
+}

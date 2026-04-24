@@ -32,24 +32,32 @@
 //  format EverBlu, entrez-les ici : le firmware fera un match
 //  partiel sur les 6 derniers chiffres du serial BCD 8 chiffres.
 //
-//  Le mode scan affichera tous les serials wMBus recus dans le
-//  moniteur serie, ce qui permettra d'identifier le serial complet.
-//
 #define METER_1_SERIAL  0UL        // 0 = desactive
 #define METER_2_SERIAL  0UL        // 0 = desactive
+
+// --- Cles AES-128 pour compteurs chiffres --------------------
+//
+//  Cle de dechiffrement au format hexadecimal (32 caracteres = 16 octets).
+//  Laisser "" si le compteur n'est pas chiffre ou si la cle est inconnue.
+//  La cle est fournie par le gestionnaire du reseau d'eau.
+//
+//  Exemple : "0102030405060708090A0B0C0D0E0F10"
+//
+#define METER_1_KEY     ""
+#define METER_2_KEY     ""
 
 // --- Scan wMBus ----------------------------------------------
 // Duree d'ecoute par mode pendant chaque cycle de scan (secondes).
 // T-mode : les compteurs emettent typiquement toutes les 8-16 s.
-// S-mode : les compteurs emettent toutes les 2-4 min → fenetre plus longue.
+// S-mode : les compteurs emettent toutes les 2-4 min -> fenetre plus longue.
 #define SCAN_LISTEN_T_SEC   60
 #define SCAN_LISTEN_S_SEC  120
 #define SCAN_PAUSE_SEC      10
 
 // --- Fuseau horaire -----------------------------------------
-// Chaîne POSIX TZ : le DST (heure d'été/hiver) est géré automatiquement.
+// Chaine POSIX TZ : le DST (heure d'ete/hiver) est gere automatiquement.
 // France / Belgique / Suisse romande :
-//   CET-1CEST,M3.5.0,M10.5.0/3  → UTC+1 hiver, UTC+2 été
+//   CET-1CEST,M3.5.0,M10.5.0/3  -> UTC+1 hiver, UTC+2 ete
 #define TIMEZONE  "CET-1CEST,M3.5.0,M10.5.0/3"
 
 // --- Broches CC1101 <-> ESP32-C3 Super Mini ------------------
@@ -66,11 +74,6 @@
 // Watchdog : log warning si aucun paquet recu > N ms
 #define WATCHDOG_TIMEOUT_MS  7200000UL  // 2 heures
 
-// --- Scan des compteurs : durees d'ecoute et de pause --------
-#define SCAN_LISTEN_T_SEC  60
-#define SCAN_LISTEN_S_SEC  120
-#define SCAN_PAUSE_SEC     10
-
 // --- OTA (Over-The-Air updates) -----------------------------
-// Doit correspondre à secrets.ini → [secrets] ota_password
+// Doit correspondre a secrets.ini -> [secrets] ota_password
 #define OTA_PASSWORD  "change_me"
