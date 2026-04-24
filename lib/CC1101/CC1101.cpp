@@ -113,7 +113,7 @@ void CC1101::configureWMBusTMode()
     for (int i = 1; i < 8; i++) SPI.transfer(0x00);
     _deselect();
 
-    log_i("CC1101 configuré : 868.95 MHz · 2-FSK · 100 kbps (wMBus T-mode)");
+    log_d("CC1101 configuré : 868.95 MHz · 2-FSK · 100 kbps (wMBus T-mode)");
 }
 
 // ============================================================
@@ -181,7 +181,7 @@ void CC1101::configureWMBusSMode()
     for (int i = 1; i < 8; i++) SPI.transfer(0x00);
     _deselect();
 
-    log_i("CC1101 configuré : 868.3 MHz · 2-FSK+Manchester · 32.768 kbps (wMBus S-mode)");
+    log_d("CC1101 configuré : 868.3 MHz · 2-FSK+Manchester · 32.768 kbps (wMBus S-mode)");
 }
 
 // ============================================================
@@ -304,7 +304,7 @@ uint8_t CC1101::drainFifo(uint8_t* buf, uint8_t maxLen)
 {
     uint8_t raw = readStatus(CC1101_RXBYTES);
     if (raw & 0x80) {
-        log_e("RXFIFO overflow — données corrompues, flush");
+        log_d("RXFIFO overflow — flush");
         _strobe(CC1101_SFRX);
         return 0;
     }

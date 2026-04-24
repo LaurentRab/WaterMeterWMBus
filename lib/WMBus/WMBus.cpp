@@ -24,10 +24,14 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
     memset(&out, 0, sizeof(out));
     out.mode = mode;
 
-    if (mode == WMBUS_T_MODE)
-        _radio.configureWMBusTMode();
-    else
-        _radio.configureWMBusSMode();
+    if (!_configured || mode != _lastMode) {
+        if (mode == WMBUS_T_MODE)
+            _radio.configureWMBusTMode();
+        else
+            _radio.configureWMBusSMode();
+        _lastMode = mode;
+        _configured = true;
+    }
 
     uint8_t rawBuf[256];
     int rawLen = _receiveRaw(timeoutMs, rawBuf, sizeof(rawBuf));
@@ -129,7 +133,7 @@ bool WMBus::_decode3of6(const uint8_t* raw, uint16_t rawBits, uint8_t* out, uint
         uint8_t loNib = DECODE_3OF6[lo6];
 
         if (hiNib == 0xFF || loNib == 0xFF) {
-            log_w("3of6 decode error at bit %u (hi=0x%02X lo=0x%02X)", bitPos - 12, hi6, lo6);
+            log_d("3of6 decode error at bit %u (hi=0x%02X lo=0x%02X)", bitPos - 12, hi6, lo6);
             if (outLen >= 11) break;  // on a au moins le header
             return false;
         }

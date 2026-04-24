@@ -175,7 +175,7 @@ static void handlePacket(const WMBusPacket& pkt)
     WMBus::decodeMfr(pkt.mField, mfr);
 
     const char* modeName = (pkt.mode == WMBUS_T_MODE) ? "T" : "S";
-    log_i("wMBus [%s-mode] serial=%08lu mfr=%s type=0x%02X RSSI=%d CRC=%s",
+    log_d("wMBus [%s-mode] serial=%08lu mfr=%s type=0x%02X RSSI=%d CRC=%s",
           modeName, pkt.serialBCD, mfr, pkt.deviceType, pkt.rssi,
           pkt.crcOk ? "OK" : "FAIL");
 
@@ -194,8 +194,11 @@ static void handlePacket(const WMBusPacket& pkt)
         if (s.count == 1 || pkt.rssi > s.bestRssi)
             s.bestRssi = pkt.rssi;
 
-        log_i(">>> MATCH compteur %d ! serial wMBus=%08lu (%s-mode) RSSI=%d count=%u",
-              i + 1, pkt.serialBCD, modeName, pkt.rssi, s.count);
+        log_i("*********************************************");
+        log_i("  COMPTEUR %d DETECTE !", i + 1);
+        log_i("  serial=%08lu  mfr=%s  %s-mode", pkt.serialBCD, mfr, modeName);
+        log_i("  RSSI=%d dBm  CRC=%s  count=%u", pkt.rssi, pkt.crcOk ? "OK" : "FAIL", s.count);
+        log_i("*********************************************");
 
         ledOn(); delay(500); ledOff();
 

@@ -37,6 +37,8 @@ public:
 
 private:
     CC1101& _radio;
+    WMBusMode _lastMode = WMBUS_T_MODE;
+    bool      _configured = false;
 
     int _receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize);
     bool _decode3of6(const uint8_t* raw, uint16_t rawBits, uint8_t* out, uint8_t& outLen);
