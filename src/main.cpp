@@ -48,7 +48,6 @@ static uint32_t totalPackets = 0;
 enum ScanPhase : uint8_t { SCAN_T, SCAN_S, SCAN_PAUSE, SCAN_DONE };
 static ScanPhase  scanPhase = SCAN_T;
 static uint32_t   phaseDeadline = 0;
-static bool       allFound = false;
 
 // ============================================================
 //  LED helpers — GPIO8 actif LOW (ESP32-C3 Super Mini)
@@ -164,6 +163,8 @@ static void setupOTA()
     log_i("OTA prêt — %s.local | %s", MQTT_CLIENT_ID, WiFi.localIP().toString().c_str());
 }
 
+static void publishResults();  // déclaration anticipée
+
 // ============================================================
 //  Traitement d'un paquet wMBus reçu
 // ============================================================
@@ -222,6 +223,16 @@ static void handlePacket(const WMBusPacket& pkt)
     }
 
     mqtt.publishScanPacket(pkt, totalPackets);
+
+    // Arrêt immédiat dès que tous les compteurs configurés sont trouvés
+    bool nowAllFound = true;
+    for (int i = 0; i < METER_COUNT; i++)
+        if (METERS[i].serial != 0 && !meterStats[i].found) { nowAllFound = false; break; }
+    if (nowAllFound && scanPhase != SCAN_DONE) {
+        log_i("=== Tous les compteurs trouvés — scan terminé ===");
+        publishResults();
+        scanPhase = SCAN_DONE;
+    }
 }
 
 // ============================================================
@@ -379,7 +390,7 @@ void loop()
         if (listenMs > 0 && wmbus.listen(WMBUS_T_MODE, listenMs, pkt))
             handlePacket(pkt);
 
-        if (millis() >= phaseDeadline) {
+        if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
             log_i("--- Fin scan T-mode → S-mode ---");
             mqtt.publishScanStatus("scanning_s");
             scanPhase = SCAN_S;
@@ -396,18 +407,9 @@ void loop()
         if (listenMs > 0 && wmbus.listen(WMBUS_S_MODE, listenMs, pkt))
             handlePacket(pkt);
 
-        if (millis() >= phaseDeadline) {
+        if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
             log_i("--- Fin scan S-mode ---");
             publishResults();
-
-            // Vérifier si tous les compteurs sont trouvés
-            allFound = true;
-            for (int i = 0; i < METER_COUNT; i++)
-                if (METERS[i].serial != 0 && !meterStats[i].found) { allFound = false; break; }
-
-            if (allFound)
-                log_i("=== Tous les compteurs trouves — scan continu ===");
-
             mqtt.publishScanStatus("pause");
             scanPhase = SCAN_PAUSE;
             phaseDeadline = millis() + PAUSE_MS;
