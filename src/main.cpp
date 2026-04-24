@@ -51,7 +51,7 @@ static const MeterCfg METERS[METER_COUNT] = {
 
 struct MeterStat {
     bool      found;
-    uint32_t  wmbusSeriallBCD;
+    uint32_t  wmbusSerialBCD;
     int8_t    bestRssi;
     uint16_t  count;
     WMBusMode mode;
@@ -75,6 +75,15 @@ static void ledOff() { digitalWrite(LED_PIN, HIGH); }
 
 static void ledBlink(int n) {
     for (int i = 0; i < n; i++) { ledOn(); delay(500); ledOff(); delay(500); }
+}
+
+[[noreturn]] static void ledSOS() {
+    for (;;) {
+        for (int i = 0; i < 3; i++) { ledOn(); delay(200); ledOff(); delay(200); }
+        for (int i = 0; i < 3; i++) { ledOn(); delay(600); ledOff(); delay(200); }
+        for (int i = 0; i < 3; i++) { ledOn(); delay(200); ledOff(); delay(200); }
+        delay(2000);
+    }
 }
 
 // ============================================================
@@ -207,7 +216,7 @@ static void handlePacket(const WMBusPacket& pkt)
 
         MeterStat& s = meterStats[i];
         s.found = true;
-        s.wmbusSeriallBCD = pkt.serialBCD;
+        s.wmbusSerialBCD = pkt.serialBCD;
         s.count++;
         s.mode = pkt.mode;
         s.deviceType = pkt.deviceType;
@@ -266,43 +275,47 @@ static void publishResults()
     int foundCount = 0;
     for (int i = 0; i < METER_COUNT; i++) if (meterStats[i].found) foundCount++;
 
-    mqtt.publish("watermeter/scan/status",
+    snprintf(topic, sizeof(topic), "%s/scan/status", MQTT_BASE_TOPIC);
+    mqtt.publish(topic,
                  foundCount == METER_COUNT ? "complete_all_found" :
                  foundCount > 0 ? "complete_partial" : "complete_none", true);
-    mqtt.publish("watermeter/scan/timestamp", timestamp, true);
+    snprintf(topic, sizeof(topic), "%s/scan/timestamp", MQTT_BASE_TOPIC);
+    mqtt.publish(topic, timestamp, true);
     snprintf(payload, sizeof(payload), "%d/%d", foundCount, METER_COUNT);
-    mqtt.publish("watermeter/scan/found_count", payload, true);
+    snprintf(topic, sizeof(topic), "%s/scan/found_count", MQTT_BASE_TOPIC);
+    mqtt.publish(topic, payload, true);
     snprintf(payload, sizeof(payload), "%lu", totalPackets);
-    mqtt.publish("watermeter/scan/packets_total", payload, true);
+    snprintf(topic, sizeof(topic), "%s/scan/packets_total", MQTT_BASE_TOPIC);
+    mqtt.publish(topic, payload, true);
 
     for (int i = 0; i < METER_COUNT; i++) {
         if (METERS[i].serial == 0) continue;
         char serial[12];
         snprintf(serial, sizeof(serial), "%lu", METERS[i].serial);
 
-        snprintf(topic, sizeof(topic), "watermeter/scan/%s/found", serial);
+        snprintf(topic, sizeof(topic), "%s/scan/%s/found", MQTT_BASE_TOPIC, serial);
         mqtt.publish(topic, meterStats[i].found ? "true" : "false", true);
         if (!meterStats[i].found) continue;
 
-        snprintf(topic, sizeof(topic), "watermeter/scan/%s/mode", serial);
+        snprintf(topic, sizeof(topic), "%s/scan/%s/mode", MQTT_BASE_TOPIC, serial);
         mqtt.publish(topic, meterStats[i].mode == WMBUS_T_MODE ? "T-mode" : "S-mode", true);
 
-        snprintf(topic, sizeof(topic), "watermeter/scan/%s/rssi", serial);
+        snprintf(topic, sizeof(topic), "%s/scan/%s/rssi", MQTT_BASE_TOPIC, serial);
         snprintf(payload, sizeof(payload), "%d", (int)meterStats[i].bestRssi);
         mqtt.publish(topic, payload, true);
 
-        snprintf(topic, sizeof(topic), "watermeter/scan/%s/mfr", serial);
+        snprintf(topic, sizeof(topic), "%s/scan/%s/mfr", MQTT_BASE_TOPIC, serial);
         mqtt.publish(topic, meterStats[i].mfr, true);
 
-        snprintf(topic, sizeof(topic), "watermeter/scan/%s/wmbus_serial", serial);
-        snprintf(payload, sizeof(payload), "%08lu", meterStats[i].wmbusSeriallBCD);
+        snprintf(topic, sizeof(topic), "%s/scan/%s/wmbus_serial", MQTT_BASE_TOPIC, serial);
+        snprintf(payload, sizeof(payload), "%08lu", meterStats[i].wmbusSerialBCD);
         mqtt.publish(topic, payload, true);
 
-        snprintf(topic, sizeof(topic), "watermeter/scan/%s/count", serial);
+        snprintf(topic, sizeof(topic), "%s/scan/%s/count", MQTT_BASE_TOPIC, serial);
         snprintf(payload, sizeof(payload), "%u", meterStats[i].count);
         mqtt.publish(topic, payload, true);
     }
-    log_i("Résultats publiés → watermeter/scan/");
+    log_i("Résultats publiés → %s/scan/", MQTT_BASE_TOPIC);
 }
 
 // ============================================================
@@ -330,23 +343,13 @@ void setup()
 
     if (!radio.begin()) {
         log_e("CC1101 non détecté — SOS LED");
-        while (true) {
-            for (int i=0;i<3;i++){ledOn();delay(200);ledOff();delay(200);}
-            for (int i=0;i<3;i++){ledOn();delay(600);ledOff();delay(200);}
-            for (int i=0;i<3;i++){ledOn();delay(200);ledOff();delay(200);}
-            delay(2000);
-        }
+        ledSOS();
     }
 
     radio.configureWMBusTMode();
     if (!radio.selfTest()) {
         log_e("Self-Test FAILED — SOS LED");
-        while (true) {
-            for (int i=0;i<3;i++){ledOn();delay(200);ledOff();delay(200);}
-            for (int i=0;i<3;i++){ledOn();delay(600);ledOff();delay(200);}
-            for (int i=0;i<3;i++){ledOn();delay(200);ledOff();delay(200);}
-            delay(2000);
-        }
+        ledSOS();
     }
 
     mqtt.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -376,7 +379,7 @@ void setup()
             mqtt.publishHADiscovery(METERS[i].serial);
     }
 
-    mqtt.publish("watermeter/scan/status", "scanning_t", true);
+    mqtt.publishScanStatus("scanning_t");
     scanPhase = SCAN_T;
     phaseDeadline = millis() + SCAN_T_MS;
 }

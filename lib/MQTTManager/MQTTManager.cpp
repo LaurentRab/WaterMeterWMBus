@@ -112,7 +112,9 @@ bool MQTTManager::_reconnect()
 
 void MQTTManager::publishScanStatus(const char* status)
 {
-    publish("watermeter/scan/status", status, true);
+    char topic[80];
+    snprintf(topic, sizeof(topic), "%s/scan/status", _baseTopic);
+    publish(topic, status, true);
 }
 
 void MQTTManager::publishScanPacket(const WMBusPacket& pkt, uint32_t totalCount)
@@ -120,8 +122,10 @@ void MQTTManager::publishScanPacket(const WMBusPacket& pkt, uint32_t totalCount)
     if (!_mqtt.connected()) return;
 
     char payload[16];
+    char topic[80];
     snprintf(payload, sizeof(payload), "%lu", totalCount);
-    publish("watermeter/scan/packets_total", payload, true);
+    snprintf(topic, sizeof(topic), "%s/scan/packets_total", _baseTopic);
+    publish(topic, payload, true);
 
     char mfr[4];
     WMBus::decodeMfr(pkt.mField, mfr);
@@ -131,7 +135,6 @@ void MQTTManager::publishScanPacket(const WMBusPacket& pkt, uint32_t totalCount)
     if (getLocalTime(&t, 0))
         strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", &t);
 
-    char topic[80];
     snprintf(topic, sizeof(topic), "%s/scan/last_packet", _baseTopic);
 
     JsonDocument doc;
