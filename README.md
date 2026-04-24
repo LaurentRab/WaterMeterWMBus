@@ -1,42 +1,65 @@
-# WaterMeter — Itron EverBlu Cyble Enhanced → Home Assistant
+# WaterMeter wMBus — Compteurs d'eau 868 MHz → Home Assistant
 
-Lecture automatique des compteurs d'eau **Itron EverBlu Cyble Enhanced (SEDIF / Actaris P40)** via radio 433 MHz, publiée en MQTT vers **Home Assistant**.
+Lecteur de compteurs d'eau **Wireless M-Bus** (EN 13757-4) basé sur **ESP32-C3 Super Mini** + **CC1101 868 MHz**, avec publication MQTT vers **Home Assistant**.
+
+## Phase 1 — Découverte
+
+Le firmware écoute en continu sur 868 MHz en alternant les modes T et S du protocole wMBus, et identifie les compteurs configurés parmi les paquets reçus.
+
+### Modes supportés
+
+| Mode | Fréquence | Débit | Encodage | Intervalle émission |
+|------|-----------|-------|----------|---------------------|
+| T-mode | 868.95 MHz | 100 kbps | 3-out-of-6 | 8–16 s |
+| S-mode | 868.3 MHz | 32.768 kbps | Manchester | 2–4 min |
+
+### Cycle de scan
+
+1. Écoute T-mode pendant `SCAN_LISTEN_T_SEC` secondes (défaut 60)
+2. Écoute S-mode pendant `SCAN_LISTEN_S_SEC` secondes (défaut 120)
+3. Pause `SCAN_PAUSE_SEC` secondes (défaut 10)
+4. Recommence jusqu'à ce que tous les compteurs soient trouvés
+
+### LED (GPIO8, active LOW)
+
+| Séquence LED | Signification |
+|---|---|
+| Heartbeat 1 blink/2 s | Scan en pause |
+| Flash court (50 ms) | Paquet wMBus reçu |
+| Flash long (500 ms) | Compteur configuré détecté |
+| N blinks lents (1 Hz) | N compteurs trouvés (même mode) |
+| N blinks + 1 flash court | N compteurs trouvés (modes différents T vs S) |
+| Clignotement rapide 5 Hz | Aucun compteur trouvé |
+| SOS | CC1101 non détecté ou self-test échoué |
 
 ## Matériel
 
 | Composant | Référence |
 |-----------|-----------|
 | Microcontrôleur | ESP32-C3 Super Mini |
-| Module radio | CC1101 (433 MHz) |
+| Module radio | CC1101 **868 MHz** |
 
-### Câblage CC1101 ↔ ESP32-C3
+> **Important** : le module CC1101 doit être prévu pour **868 MHz** (antenne et circuit d'adaptation). Un module 433 MHz fonctionnera mal à 868 MHz (perte ~15-20 dB).
 
-| CC1101 | ESP32-C3 | Notes |
-|--------|----------|-------|
-| GDO0   | GPIO 4   | signal de synchronisation trame |
-| CSN    | GPIO 5   | SPI Chip Select |
-| SCK    | GPIO 6   | SPI Clock |
-| MOSI   | GPIO 7   | SPI Data in |
-| MISO   | **GPIO 10** | GPIO 8 réservé à la LED intégrée |
-| VCC    | 3.3 V    | |
-| GND    | GND      | |
+### Câblage CC1101 → ESP32-C3
 
-> **Important** : GPIO 8 est la LED bleue intégrée de l'ESP32-C3 Super Mini (active LOW).
-> Connecter MISO sur **GPIO 10** (et non GPIO 8).
+| CC1101 | ESP32-C3 | GPIO |
+|--------|----------|------|
+| GDO0 | D4 | 4 |
+| CSN | D5 | 5 |
+| SCK | D6 | 6 |
+| MOSI | D7 | 7 |
+| MISO | **D10** | 10 |
+| VCC | 3.3V | — |
+| GND | GND | — |
 
-## Protocole
-
-- **Fréquence** : 433.82 MHz nominale — chaque compteur peut dériver légèrement (433.76 – 433.89 MHz)
-- **Modulation** : 2-FSK · 2.4 kbps · déviation 5.157 kHz
-- **Séquence** : wake-up ~2.5 s → requête 39 octets → ACK 18 octets → données 4× oversampled 9.6 kbps
-- **Fenêtre active** : les compteurs ne répondent qu'entre **06:00 et 18:59**
+> GPIO 8 est réservé à la LED intégrée de l'ESP32-C3 Super Mini (active LOW).
 
 ## Configuration
 
-Copier le fichier d'exemple puis renseigner vos valeurs :
-
 ```bash
 cp include/config.example.h include/config.h
+cp secrets.example.ini secrets.ini
 ```
 
 Éditer `include/config.h` :
@@ -47,110 +70,36 @@ cp include/config.example.h include/config.h
 | `MQTT_SERVER` / `MQTT_PORT` | Broker MQTT (Home Assistant) |
 | `MQTT_USER` / `MQTT_PASS` | Identifiants MQTT |
 | `METER_COUNT` | Nombre de compteurs (1 à 4) |
-| `METER_N_SERIAL` | 6 chiffres centraux du numéro de série |
-| `METER_N_YEAR` | Année de fabrication (2 chiffres, ex: `19`) |
-| `METER_N_FREQ_MHZ` | Fréquence propre au compteur (trouver avec `tune`) |
-| `READ_INTERVAL_MIN` | Intervalle entre lectures (minutes, défaut 60) |
-| `LEAK_THRESHOLD_L` | Seuil de fuite nocturne (litres, défaut 20) |
+| `METER_N_SERIAL` | 6 ou 8 chiffres du numéro de série |
+| `SCAN_LISTEN_T_SEC` | Durée écoute T-mode par cycle (défaut 60 s) |
+| `SCAN_LISTEN_S_SEC` | Durée écoute S-mode par cycle (défaut 120 s) |
 
-Ce fichier est ignoré par git (secrets).
+### Numéro de série
 
-### Trouver le numéro de série
+Le serial wMBus est un identifiant de 8 chiffres BCD. Si vous ne connaissez que les 6 chiffres centraux de l'ancien format EverBlu, entrez-les : le firmware fera un match partiel.
 
-Le numéro imprimé sur le module suit le format `[2 chiffres usine][6 chiffres serial][1 chiffre contrôle]`.
-Exemple : `843561553` → `METER_N_SERIAL = 356155`, `METER_N_YEAR = 19` (indiqué par `19399` sur l'étiquette).
+Le moniteur série affiche tous les serials reçus, ce qui permet d'identifier le serial complet de chaque compteur.
 
 ## Compilation & flash
 
-Projet **PlatformIO**. Environnements disponibles :
-
-| Environnement | Usage |
-|---------------|-------|
-| `watermeter` | Firmware normal (production) |
-| `tune` | Scan de fréquence — attend la fenêtre horaire configurée, puis scanne |
-| `tune_led_test` | Idem `tune` + déroule toutes les séquences LED au démarrage |
-
 ```bash
-# Firmware normal
-pio run -e watermeter --target upload
-
-# Mode calibration fréquence
-pio run -e tune --target upload
-
-# Mode calibration + test LED
-pio run -e tune_led_test --target upload
+pio run --target upload
+pio device monitor
 ```
 
-## Mode TuneFrequency
+## Topics MQTT
 
-Chaque compteur peut avoir une légère dérive fréquentielle. Le mode `tune` scanne automatiquement **433.750 → 433.900 MHz par pas de 5 kHz** (31 fréquences) et publie les résultats.
-
-### Fonctionnement
-
-Le firmware attend la fenêtre horaire configurée (`TUNE_HOUR_START` / `TUNE_HOUR_END` / `TUNE_DAYS_MASK`) de façon **non-bloquante** (machine à états dans `loop()`). Pendant l'attente, la LED clignote en heartbeat lent (100 ms toutes les 2 s).
-
-Une fois la fenêtre atteinte, le scan démarre (~2 min pour 31 fréquences × 2 compteurs). Les résultats sont ensuite publiés en MQTT et la LED indique le résultat :
-
-| Séquence LED | Signification |
-|---|---|
-| Heartbeat 1 blink/2 s | Attente de la fenêtre horaire |
-| N blinks lents (1 Hz) | N compteurs trouvés (même fréquence) |
-| N blinks + 1 flash court | N compteurs trouvés (fréquences différentes) |
-| Clignotement rapide 5 Hz | Aucun compteur trouvé |
-
-### Après le scan
-
-Le moniteur série affiche :
-
-```
->>> SUCCES compteur 1 : 433.820 MHz | 123456 L | batt=42 | RSSI=-65
-    → METER_1_FREQ_MHZ  433.820f
-```
-
-Recopier la valeur dans `config.h`, puis recompiler avec l'environnement `watermeter`.
-
-### Topics MQTT du scan
-
-| Topic | Contenu |
+| Topic | Payload |
 |-------|---------|
-| `watermeter/tune/status` | `waiting` → `complete_found` / `complete_not_found` |
-| `watermeter/tune/found_count` | ex: `2/2` |
-| `watermeter/tune/<serial>/found` | `true` / `false` |
-| `watermeter/tune/<serial>/freq_mhz` | fréquence trouvée (ex: `433.820`) |
-| `watermeter/tune/<serial>/rssi` | RSSI en dBm |
-
-## Topics MQTT (mode normal)
-
-| Topic | Contenu |
-|-------|---------|
-| `watermeter/<serial>/state` | JSON (voir ci-dessous) |
-| `watermeter/<serial>/leak` | `ON` / `OFF` |
-| `watermeter/<serial>/availability` | `offline` si silencieux > `WATCHDOG_TIMEOUT_MS` |
-| `watermeter/status` | `online` / `offline` (LWT) |
-
-Exemple de payload `state` :
-
-```json
-{
-  "liters": 123456,
-  "m3": 123.456,
-  "delta_l": 12,
-  "battery_months": 42,
-  "read_count": 1234,
-  "rssi": -65,
-  "timestamp": "2025-06-01T08:30:00"
-}
-```
-
-**Home Assistant Auto-Discovery** est activé : les entités (volume m³, batterie, fuite) apparaissent automatiquement dans HA.
-
-## Détection de fuite
-
-Après chaque nuit (saut > 4 h entre deux lectures), la consommation nocturne est comparée à `LEAK_THRESHOLD_L`. Si elle est dépassée, `leak = ON` est publié en MQTT. L'état est re-publié toutes les 5 minutes tant que la condition persiste.
-
-## Watchdog
-
-Un topic `availability = offline` est publié si un compteur est silencieux depuis plus de `WATCHDOG_TIMEOUT_MS` (défaut : 2 h).
+| `watermeter/scan/status` | `scanning_t` / `scanning_s` / `pause` / `complete_all_found` |
+| `watermeter/scan/packets_total` | Nombre total de paquets reçus |
+| `watermeter/scan/found_count` | `N/M` (trouvés/configurés) |
+| `watermeter/scan/last_packet` | JSON du dernier paquet reçu |
+| `watermeter/scan/<serial>/found` | `true` / `false` |
+| `watermeter/scan/<serial>/mode` | `T-mode` / `S-mode` |
+| `watermeter/scan/<serial>/rssi` | dBm |
+| `watermeter/<serial>/detected` | JSON complet du compteur détecté |
+| `watermeter/status` | LWT `online` / `offline` |
 
 ## Structure du projet
 
@@ -159,17 +108,13 @@ Un topic `availability = offline` est publié si un compteur est silencieux depu
 │   ├── config.example.h  — template de configuration (versionné)
 │   └── config.h          — paramètres utilisateur (ignoré par git)
 ├── lib/
-│   ├── CC1101/            — driver SPI bas niveau (registres, GDO0, FIFO)
-│   ├── EverBlu/           — protocole Itron EverBlu (wake-up, trames, CRC)
-│   └── MQTTManager/       — WiFi + MQTT + HA auto-discovery
+│   ├── CC1101/            — driver SPI bas niveau CC1101
+│   ├── WMBus/             — protocole wMBus (3of6, CRC, parsing)
+│   └── MQTTManager/       — WiFi + MQTT diagnostic
 ├── src/
-│   └── main.cpp           — boucle principale + mode TuneFrequency
+│   └── main.cpp           — boucle de scan T-mode / S-mode
 └── platformio.ini
 ```
-
-## Crédits
-
-Protocole EverBlu basé sur le reverse-engineering de [psykokwak-com/everblu-meters-esp8266](https://github.com/psykokwak-com/everblu-meters-esp8266).
 
 ## Licence
 

@@ -16,7 +16,7 @@ bool CC1101::begin()
 
     SPI.setDataMode(SPI_MODE0);
     SPI.setBitOrder(MSBFIRST);
-    SPI.setFrequency(500000);   // 500 kHz recommandé pour EverBlu
+    SPI.setFrequency(500000);
 
     pinMode(_csn,  OUTPUT);
     pinMode(_gdo0, INPUT);
@@ -48,75 +48,140 @@ bool CC1101::begin()
 }
 
 // ============================================================
-//  Configuration EverBlu Cyble Enhanced
-//  Source : reverse-engineering hallard/psykokwak
-//  2-FSK · 2.4 kbps · 433.82 MHz · déviation 5.157 kHz
+//  Configuration wMBus T-mode
+//  868.95 MHz · 2-FSK · 100 kbps · déviation 50 kHz
 // ============================================================
 
-void CC1101::configureEverBlu()
+void CC1101::configureWMBusTMode()
 {
     _writeReg(CC1101_IOCFG2,   0x0D);  // GDO2 : serial data output
-    _writeReg(CC1101_IOCFG0,   0x06);  // GDO0 : assert sur sync word reçu/envoyé
+    _writeReg(CC1101_IOCFG0,   0x06);  // GDO0 : assert sur sync word
 
     _writeReg(CC1101_FIFOTHR,  0x47);  // RX thr 33B / TX thr 32B
 
-    _writeReg(CC1101_SYNC1,    0x55);  // Sync word : 0x55 0x00 (défaut, modifié par EverBlu)
-    _writeReg(CC1101_SYNC0,    0x00);
+    _writeReg(CC1101_SYNC1,    0x54);  // Sync word T-mode : 0x543D
+    _writeReg(CC1101_SYNC0,    0x3D);
 
-    _writeReg(CC1101_PKTCTRL1, 0x00);  // Pas de vérif adresse
-    _writeReg(CC1101_PKTCTRL0, 0x00);  // Longueur fixe, pas de CRC HW
+    _writeReg(CC1101_PKTLEN,   0xFF);
+    _writeReg(CC1101_PKTCTRL1, 0x00);
+    _writeReg(CC1101_PKTCTRL0, 0x02);  // mode paquet infini
 
-    _writeReg(CC1101_FSCTRL1,  0x08);  // Fréquence intermédiaire
+    _writeReg(CC1101_FSCTRL1,  0x08);
 
-    // Fréquence : 433.82 MHz  (f = 26 MHz × FREQ / 2^16)
-    // 0x10AF75 = 1093493 → 1093493 × 26e6 / 65536 = 433.820 MHz
-    _writeReg(CC1101_FREQ2,    0x10);
-    _writeReg(CC1101_FREQ1,    0xAF);
-    _writeReg(CC1101_FREQ0,    0x75);
+    // 868.95 MHz : FREQ = round(868.95e6 / 26e6 * 65536) = 2190644 = 0x216E34
+    _writeReg(CC1101_FREQ2,    0x21);
+    _writeReg(CC1101_FREQ1,    0x6E);
+    _writeReg(CC1101_FREQ0,    0x34);
 
-    // Modem : BW 58 kHz, 2.4 kbps, 2-FSK
-    _writeReg(CC1101_MDMCFG4,  0xF6);  // CHANBW_E=3, CHANBW_M=3, DRATE_E=6 → BW=58kHz
-    _writeReg(CC1101_MDMCFG3,  0x83);  // DRATE_M=131 → 2399 bps ≈ 2.4 kbps
-    _writeReg(CC1101_MDMCFG2,  0x02);  // 2-FSK, pas de Manchester, 16/16 sync bits
-    _writeReg(CC1101_MDMCFG1,  0x00);  // 2 octets de préambule
-    _writeReg(CC1101_MDMCFG0,  0x00);  // Channel spacing 25 kHz
+    // BW=325 kHz, 100 kbps, 2-FSK, pas de Manchester
+    _writeReg(CC1101_MDMCFG4,  0x5B);  // CHANBW_E=1 CHANBW_M=1 DRATE_E=11
+    _writeReg(CC1101_MDMCFG3,  0xF8);  // DRATE_M=248 → ~100 kbps
+    _writeReg(CC1101_MDMCFG2,  0x02);  // 2-FSK, 16/16 sync
+    _writeReg(CC1101_MDMCFG1,  0x42);  // 4 octets préambule
+    _writeReg(CC1101_MDMCFG0,  0xF8);
 
-    // Déviation 2-FSK : 5.157 kHz
-    _writeReg(CC1101_DEVIATN,  0x15);  // DEVIATN_E=1, DEVIATN_M=5
+    _writeReg(CC1101_DEVIATN,  0x50);  // ~50 kHz
 
-    // Machine d'état : retour IDLE après TX/RX (RXOFF=IDLE, TXOFF=IDLE)
     _writeReg(CC1101_MCSM1,    0x00);
-    _writeReg(CC1101_MCSM0,    0x18);  // Auto-calibration IDLE→RX/TX
+    _writeReg(CC1101_MCSM0,    0x18);  // auto-cal IDLE→RX/TX
 
     _writeReg(CC1101_FOCCFG,   0x1D);
     _writeReg(CC1101_BSCFG,    0x1C);
     _writeReg(CC1101_AGCCTRL2, 0xC7);
     _writeReg(CC1101_AGCCTRL1, 0x00);
-    _writeReg(CC1101_AGCCTRL0, 0xB2);
+    _writeReg(CC1101_AGCCTRL0, 0xB0);
 
     _writeReg(CC1101_WORCTRL,  0xFB);
 
     _writeReg(CC1101_FREND1,   0xB6);
     _writeReg(CC1101_FREND0,   0x10);
 
-    _writeReg(CC1101_FSCAL3,   0xE9);
+    _writeReg(CC1101_FSCAL3,   0xEA);
     _writeReg(CC1101_FSCAL2,   0x2A);
     _writeReg(CC1101_FSCAL1,   0x00);
     _writeReg(CC1101_FSCAL0,   0x1F);
 
-    // Requis pour les faibles débits (< 26 kbps)
-    _writeReg(CC1101_TEST2,    0x81);
-    _writeReg(CC1101_TEST1,    0x35);
+    // Registres TEST pour hauts débits (>= 26 kbps)
+    _writeReg(CC1101_TEST2,    0x88);
+    _writeReg(CC1101_TEST1,    0x31);
     _writeReg(CC1101_TEST0,    0x09);
 
-    // PA table : +10 dBm (~10 mW, puissance max CC1101)
+    // PA table (RX only, mais requis par le CC1101)
     _select(); _waitMiso();
-    SPI.transfer(0x7E | CC1101_BURST_FLAG);   // PATABLE burst write
-    SPI.transfer(0xC0);  // +10 dBm max power (requis pour réveiller le compteur)
+    SPI.transfer(0x7E | CC1101_BURST_FLAG);
+    SPI.transfer(0xC0);
     for (int i = 1; i < 8; i++) SPI.transfer(0x00);
     _deselect();
 
-    log_i("CC1101 configuré : 433.82 MHz · 2-FSK · 2.4 kbps (EverBlu)");
+    log_i("CC1101 configuré : 868.95 MHz · 2-FSK · 100 kbps (wMBus T-mode)");
+}
+
+// ============================================================
+//  Configuration wMBus S-mode
+//  868.3 MHz · 2-FSK + Manchester HW · 32.768 kbps · déviation 50 kHz
+// ============================================================
+
+void CC1101::configureWMBusSMode()
+{
+    _writeReg(CC1101_IOCFG2,   0x0D);
+    _writeReg(CC1101_IOCFG0,   0x06);
+
+    _writeReg(CC1101_FIFOTHR,  0x47);
+
+    _writeReg(CC1101_SYNC1,    0x76);  // Sync word S-mode : 0x7696
+    _writeReg(CC1101_SYNC0,    0x96);
+
+    _writeReg(CC1101_PKTLEN,   0xFF);
+    _writeReg(CC1101_PKTCTRL1, 0x00);
+    _writeReg(CC1101_PKTCTRL0, 0x02);  // mode paquet infini
+
+    _writeReg(CC1101_FSCTRL1,  0x08);
+
+    // 868.3 MHz : FREQ = round(868.3e6 / 26e6 * 65536) = 2189004 = 0x2166CC
+    _writeReg(CC1101_FREQ2,    0x21);
+    _writeReg(CC1101_FREQ1,    0x66);
+    _writeReg(CC1101_FREQ0,    0xCC);
+
+    // BW=162 kHz, 32.768 kbps, 2-FSK + Manchester HW
+    _writeReg(CC1101_MDMCFG4,  0x9A);  // CHANBW_E=2 CHANBW_M=1 DRATE_E=10
+    _writeReg(CC1101_MDMCFG3,  0x4A);  // DRATE_M=74 → ~32.768 kbps
+    _writeReg(CC1101_MDMCFG2,  0x0A);  // 2-FSK, Manchester ON, 16/16 sync
+    _writeReg(CC1101_MDMCFG1,  0x22);  // 4 octets préambule
+    _writeReg(CC1101_MDMCFG0,  0xF8);
+
+    _writeReg(CC1101_DEVIATN,  0x50);  // ~50 kHz
+
+    _writeReg(CC1101_MCSM1,    0x00);
+    _writeReg(CC1101_MCSM0,    0x18);
+
+    _writeReg(CC1101_FOCCFG,   0x1D);
+    _writeReg(CC1101_BSCFG,    0x1C);
+    _writeReg(CC1101_AGCCTRL2, 0xC7);
+    _writeReg(CC1101_AGCCTRL1, 0x00);
+    _writeReg(CC1101_AGCCTRL0, 0xB0);
+
+    _writeReg(CC1101_WORCTRL,  0xFB);
+
+    _writeReg(CC1101_FREND1,   0xB6);
+    _writeReg(CC1101_FREND0,   0x10);
+
+    _writeReg(CC1101_FSCAL3,   0xEA);
+    _writeReg(CC1101_FSCAL2,   0x2A);
+    _writeReg(CC1101_FSCAL1,   0x00);
+    _writeReg(CC1101_FSCAL0,   0x1F);
+
+    // Registres TEST pour hauts débits (>= 26 kbps)
+    _writeReg(CC1101_TEST2,    0x88);
+    _writeReg(CC1101_TEST1,    0x31);
+    _writeReg(CC1101_TEST0,    0x09);
+
+    _select(); _waitMiso();
+    SPI.transfer(0x7E | CC1101_BURST_FLAG);
+    SPI.transfer(0xC0);
+    for (int i = 1; i < 8; i++) SPI.transfer(0x00);
+    _deselect();
+
+    log_i("CC1101 configuré : 868.3 MHz · 2-FSK+Manchester · 32.768 kbps (wMBus S-mode)");
 }
 
 // ============================================================
@@ -227,22 +292,9 @@ bool CC1101::selfTest()
         log_i("  OK    RX transition (MARCSTATE=0x0D) | bruit ambiant RSSI=%d dBm", rssi);
     }
 
-    // 6. Vérification PA table readback
-    _select(); _waitMiso();
-    SPI.transfer(0x7E | CC1101_READ_FLAG | CC1101_BURST_FLAG);  // PATABLE burst read
-    uint8_t pa0 = SPI.transfer(0x00);
-    _deselect();
-
-    if (pa0 != 0xC0) {
-        log_e("  FAIL  PA table[0]=0x%02X (attendu 0xC0 = +10 dBm)", pa0);
-        errors++;
-    } else {
-        log_i("  OK    PA table[0]=0xC0 (+10 dBm)");
-    }
-
     // Bilan
     if (errors == 0) {
-        log_i("--- Self-Test PASSED (6/6) ---");
+        log_i("--- Self-Test PASSED (5/5) ---");
     } else {
         log_e("--- Self-Test FAILED (%d erreur(s)) — vérifier câblage et alimentation ---", errors);
     }
@@ -251,7 +303,7 @@ bool CC1101::selfTest()
 }
 
 // ============================================================
-//  Interface bas niveau publique (pour EverBlu)
+//  Interface bas niveau publique
 // ============================================================
 
 void CC1101::writeReg(uint8_t addr, uint8_t val)    { _writeReg(addr, val); }

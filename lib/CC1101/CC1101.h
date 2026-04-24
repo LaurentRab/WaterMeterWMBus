@@ -3,8 +3,8 @@
 #include <SPI.h>
 
 // ============================================================
-//  Driver CC1101 bas niveau — Itron EverBlu Cyble Enhanced
-//  433.82 MHz · 2-FSK · 2.4 kbps
+//  Driver CC1101 bas niveau — Wireless M-Bus (wMBus)
+//  868 MHz · 2-FSK · T-mode 100 kbps / S-mode 32.768 kbps
 // ============================================================
 
 // ---- Registres de configuration ----------------------------
@@ -90,8 +90,11 @@ public:
     // Initialise SPI + reset + vérifie version
     bool begin();
 
-    // Configure pour EverBlu (2-FSK 2.4 kbps 433.82 MHz)
-    void configureEverBlu();
+    // Configure pour wMBus T-mode (868.95 MHz, 2-FSK, 100 kbps)
+    void configureWMBusTMode();
+
+    // Configure pour wMBus S-mode (868.3 MHz, 2-FSK + Manchester, 32.768 kbps)
+    void configureWMBusSMode();
 
     // Change la fréquence porteuse à chaud (sans reconfigurer les autres registres)
     void setFrequency(float mhz);
@@ -103,7 +106,7 @@ public:
     // Retourne true si tout est OK.
     bool selfTest();
 
-    // ---- Interface bas niveau pour EverBlu ----------------
+    // ---- Interface bas niveau ----------------
     void    writeReg(uint8_t addr, uint8_t val);
     uint8_t readReg(uint8_t addr)    const;    // lit registre de config (single byte)
     uint8_t readStatus(uint8_t addr) const;   // lit registre de statut (BURST)
