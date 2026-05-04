@@ -67,6 +67,7 @@ static constexpr uint8_t CC1101_TEST0    = 0x2E;
 static constexpr uint8_t CC1101_SRES  = 0x30;
 static constexpr uint8_t CC1101_SRX   = 0x34;
 static constexpr uint8_t CC1101_STX   = 0x35;
+static constexpr uint8_t CC1101_SCAL  = 0x33;  // calibrate frequency synthesizer
 static constexpr uint8_t CC1101_SIDLE = 0x36;
 static constexpr uint8_t CC1101_SFRX  = 0x3A;
 static constexpr uint8_t CC1101_SFTX  = 0x3B;
@@ -135,8 +136,12 @@ public:
     uint8_t rxFifoBytes() const;  // octets disponibles dans RX FIFO
     uint8_t marcstate()   const;  // état courant (CC1101_STATE_*)
 
-    int8_t  readRSSI() const;
-    bool    readGDO0() const;     // true si GDO0 est HIGH (sync word détecté)
+    int8_t   readRSSI() const;
+    bool     readGDO0() const;     // true si GDO0 est HIGH (sync word détecté)
+
+    // Sniffer brut : désactive le filtre sync word, retourne le nombre d'octets
+    // reçus dans le FIFO pendant durationMs. > ~1000/s = chaîne RF fonctionnelle.
+    uint16_t rawSniff(uint32_t durationMs);
 
 private:
     uint8_t _csn, _gdo0;

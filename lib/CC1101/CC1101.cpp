@@ -228,6 +228,41 @@ void CC1101::idle()
 }
 
 // ============================================================
+//  Sniffer brut — SYNC_MODE désactivé, compte les octets FIFO
+//  > ~1000 octets/s : démodulateur RF fonctionnel
+//  < 100 octets sur toute la durée : chaîne RF défaillante
+// ============================================================
+
+uint16_t CC1101::rawSniff(uint32_t durationMs)
+{
+    idle();
+    uint8_t saved = _readReg(CC1101_MDMCFG2);
+    _writeReg(CC1101_MDMCFG2, saved & 0xF8);  // SYNC_MODE = 000
+    _strobe(CC1101_SRX);
+    delay(5);
+
+    uint32_t end   = millis() + durationMs;
+    uint16_t total = 0;
+    uint8_t  buf[64];
+
+    while (millis() < end) {
+        uint8_t raw = readStatus(CC1101_RXBYTES);
+        if (raw & 0x80) {
+            _strobe(CC1101_SFRX); _strobe(CC1101_SRX);
+        } else if (raw & 0x7F) {
+            uint8_t n = drainFifo(buf, sizeof(buf));
+            total += n;
+            _strobe(CC1101_SRX);
+        }
+        delay(5);
+    }
+
+    idle();
+    _writeReg(CC1101_MDMCFG2, saved);
+    return total;
+}
+
+// ============================================================
 //  Self-test matériel
 // ============================================================
 
@@ -289,12 +324,23 @@ bool CC1101::selfTest()
         log_i("  OK    RX transition (MARCSTATE=0x0D) | bruit ambiant RSSI=%d dBm", rssi);
     }
 
-    // Bilan
-    if (errors == 0) {
-        log_i("--- Self-Test PASSED (4/4) ---");
-    } else {
-        log_e("--- Self-Test FAILED (%d erreur(s)) — vérifier câblage et alimentation ---", errors);
+    // 5. VCO calibration : SCAL strobe, attente IDLE, vérif FSCAL3[7:6] == 0b11
+    idle();
+    _strobe(CC1101_SCAL);
+    {
+        uint32_t t = millis();
+        while (marcstate() != CC1101_STATE_IDLE && millis() - t < 200);
     }
+    uint8_t fscal3 = _readReg(CC1101_FSCAL3);
+    if ((fscal3 >> 6) != 0x03) {
+        log_e("  FAIL  VCO calibration : FSCAL3=0x%02X (bits[7:6]≠11 → VCO hors verr. 868 MHz)", fscal3);
+        errors++;
+    } else {
+        log_i("  OK    VCO calibration (FSCAL3=0x%02X → VCO verrouillé 868 MHz)", fscal3);
+    }
+
+    if (errors == 0) log_i("--- Self-Test PASSED (5/5) ---");
+    else             log_e("--- Self-Test FAILED (%d erreur(s)) — vérifier câblage et alimentation ---", errors);
 
     return errors == 0;
 }

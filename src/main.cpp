@@ -69,6 +69,13 @@ enum ScanPhase : uint8_t { SCAN_T, SCAN_S, SCAN_PAUSE, SCAN_DONE };
 static ScanPhase  scanPhase = SCAN_T;
 static uint32_t   phaseDeadline = 0;
 
+// Diagnostic RF — réinitialisé à chaque cycle de scan
+static int8_t   rfDiagRssiMin   = 0;
+static int8_t   rfDiagRssiMax   = 0;
+static int32_t  rfDiagRssiSum   = 0;
+static uint16_t rfDiagRssiN     = 0;
+static uint16_t rfDiagMarcFault = 0;
+
 // ============================================================
 //  LED helpers — GPIO8 actif LOW (ESP32-C3 Super Mini)
 // ============================================================
@@ -87,6 +94,41 @@ static void ledBlink(int n) {
         for (int i = 0; i < 3; i++) { ledOn(); delay(200); ledOff(); delay(200); }
         delay(2000);
     }
+}
+
+// ============================================================
+//  Diagnostic RF — échantillonnage RSSI + MARCSTATE
+// ============================================================
+
+static void resetRfDiag() {
+    rfDiagRssiMin = rfDiagRssiMax = rfDiagRssiSum = 0;
+    rfDiagRssiN = rfDiagMarcFault = 0;
+}
+
+static void sampleRfDiag() {
+    int8_t r = radio.readRSSI();
+    rfDiagRssiN++;
+    rfDiagRssiSum += r;
+    if (rfDiagRssiN == 1) { rfDiagRssiMin = r; rfDiagRssiMax = r; }
+    else {
+        if (r < rfDiagRssiMin) rfDiagRssiMin = r;
+        if (r > rfDiagRssiMax) rfDiagRssiMax = r;
+    }
+    // Après listen(), le radio est en IDLE (0x01). Toute autre valeur = anomalie.
+    if (radio.marcstate() != CC1101_STATE_IDLE) rfDiagMarcFault++;
+}
+
+static void reportRfDiag(const char* tag) {
+    if (rfDiagRssiN == 0) return;
+    int8_t avg = (int8_t)(rfDiagRssiSum / (int32_t)rfDiagRssiN);
+    log_i("RF diag [%s] RSSI min=%d max=%d moy=%d dBm / %u mesures",
+          tag, rfDiagRssiMin, rfDiagRssiMax, avg, rfDiagRssiN);
+    if (rfDiagMarcFault > 0)
+        log_w("  RF diag : MARCSTATE hors IDLE %u fois (instabilité chip ?)", rfDiagMarcFault);
+    if (rfDiagRssiMax < -95)
+        log_w("  RF diag : RSSI max %d dBm — très bas, antenne ou clone défaillant ?", rfDiagRssiMax);
+    else if (rfDiagRssiMax >= -75)
+        log_i("  RF diag : RSSI pic %d dBm — activité RF 868 MHz détectée", rfDiagRssiMax);
 }
 
 // ============================================================
@@ -421,14 +463,35 @@ void loop()
         uint32_t remaining = (millis() < phaseDeadline) ? (phaseDeadline - millis()) : 0;
         uint32_t listenMs = (remaining > 2000) ? 2000 : remaining;
 
-        if (listenMs > 0 && wmbus.listen(WMBUS_T_MODE, listenMs, pkt))
-            handlePacket(pkt);
+        if (listenMs > 0) {
+            if (wmbus.listen(WMBUS_T_MODE, listenMs, pkt))
+                handlePacket(pkt);
+            sampleRfDiag();  // RSSI + MARCSTATE après chaque fenêtre d'écoute
+        }
 
         if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
-            log_i("--- Fin scan T-mode → S-mode ---");
-            mqtt.publishScanStatus("scanning_s");
-            scanPhase = SCAN_S;
-            phaseDeadline = millis() + SCAN_S_MS;
+            log_i("--- Fin scan T-mode ---");
+            reportRfDiag("T-mode");
+
+            // Test D : sniffer brut (une seule fois, si aucun paquet wMBus reçu)
+            static bool rawSniffDone = false;
+            if (!rawSniffDone && totalPackets == 0) {
+                rawSniffDone = true;
+                log_i("Sniffer brut sans sync word — 2 s...");
+                uint16_t n = radio.rawSniff(2000);
+                log_i("Sniffer brut : %u octets reçus en 2 s", n);
+                if (n < 100)
+                    log_w("  → Très peu d'octets — chaîne RF défaillante (antenne ou clone ?)");
+                else if (n > 2000)
+                    log_i("  → Démodulateur RF fonctionnel (%u octets)", n);
+                else
+                    log_i("  → Signal RF faible mais présent (%u octets)", n);
+            }
+
+            publishResults();
+            mqtt.publishScanStatus("pause");
+            scanPhase = SCAN_PAUSE;
+            phaseDeadline = millis() + PAUSE_MS;
         }
         break;
     }
@@ -438,11 +501,15 @@ void loop()
         uint32_t remaining = (millis() < phaseDeadline) ? (phaseDeadline - millis()) : 0;
         uint32_t listenMs = (remaining > 2000) ? 2000 : remaining;
 
-        if (listenMs > 0 && wmbus.listen(WMBUS_S_MODE, listenMs, pkt))
-            handlePacket(pkt);
+        if (listenMs > 0) {
+            if (wmbus.listen(WMBUS_S_MODE, listenMs, pkt))
+                handlePacket(pkt);
+            sampleRfDiag();
+        }
 
         if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
             log_i("--- Fin scan S-mode ---");
+            reportRfDiag("S-mode");
             publishResults();
             mqtt.publishScanStatus("pause");
             scanPhase = SCAN_PAUSE;
@@ -464,6 +531,7 @@ void loop()
         if (millis() >= phaseDeadline) {
             ledOff();
             log_i("--- Nouveau cycle de scan ---");
+            resetRfDiag();
             mqtt.publishScanStatus("scanning_t");
             scanPhase = SCAN_T;
             phaseDeadline = millis() + SCAN_T_MS;
