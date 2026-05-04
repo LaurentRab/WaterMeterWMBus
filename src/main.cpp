@@ -42,11 +42,14 @@ static constexpr uint32_t PAUSE_MS  = (uint32_t)SCAN_PAUSE_SEC    * 1000UL;
 struct MeterCfg {
     uint32_t serial;
 };
+
+// ***** ATTENTION ****** BUG ICI ET A CORRIGER. Il faut autant d'entréesdans MeterCfg que 'METER_COUNT' 
 static const MeterCfg METERS[METER_COUNT] = {
     { METER_1_SERIAL },
 #if METER_COUNT >= 2
     { METER_2_SERIAL },
 #endif
+
 };
 
 struct MeterStat {
@@ -336,6 +339,7 @@ static void publishResults()
 void setup()
 {
 #if CORE_DEBUG_LEVEL > 0
+    // Délai nécessaire pour permettre l'initialisation de la console
     delay(5000);
 #endif
 
