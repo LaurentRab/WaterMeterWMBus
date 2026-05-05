@@ -132,7 +132,8 @@ int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize)
     uint32_t lastData = millis();
 
     while (total < bufSize) {
-        uint8_t chunk = _radio.drainFifo(buf + total, bufSize - total);
+        uint16_t remain = bufSize - total;
+        uint8_t chunk = _radio.drainFifo(buf + total, remain < 64 ? (uint8_t)remain : 64);
         if (chunk > 0) {
             total += chunk;
             lastData = millis();
