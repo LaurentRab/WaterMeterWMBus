@@ -85,10 +85,10 @@ void CC1101::configureWMBusTMode()
 
     _writeReg(CC1101_FSCTRL1,  0x08);
 
-    // 868.95 MHz : FREQ = round(868.95e6 / 26e6 * 65536) = 2190644 = 0x216E34
+    // 868.95 MHz : FREQ = round(868.95e6 / 26e6 * 65536) = 2190289 = 0x216BD1
     _writeReg(CC1101_FREQ2,    0x21);
-    _writeReg(CC1101_FREQ1,    0x6E);
-    _writeReg(CC1101_FREQ0,    0x34);
+    _writeReg(CC1101_FREQ1,    0x6B);
+    _writeReg(CC1101_FREQ0,    0xD1);
 
     // BW=325 kHz (CHANBW_E=0 M=3), 100 kbps, 2-FSK — step 1: réduit depuis 541 kHz, cible finale 203 kHz
     _writeReg(CC1101_MDMCFG4,  0x0B);  // CHANBW_E=0 CHANBW_M=3 DRATE_E=11
@@ -154,10 +154,10 @@ void CC1101::configureWMBusSMode()
 
     _writeReg(CC1101_FSCTRL1,  0x08);
 
-    // 868.3 MHz : FREQ = round(868.3e6 / 26e6 * 65536) = 2189004 = 0x2166CC
+    // 868.3 MHz : FREQ = round(868.3e6 / 26e6 * 65536) = 2188650 = 0x21656A
     _writeReg(CC1101_FREQ2,    0x21);
-    _writeReg(CC1101_FREQ1,    0x66);
-    _writeReg(CC1101_FREQ0,    0xCC);
+    _writeReg(CC1101_FREQ1,    0x65);
+    _writeReg(CC1101_FREQ0,    0x6A);
 
     // BW=162 kHz, 32.768 kbps, 2-FSK + Manchester HW
     _writeReg(CC1101_MDMCFG4,  0x9A);  // CHANBW_E=2 CHANBW_M=1 DRATE_E=10
