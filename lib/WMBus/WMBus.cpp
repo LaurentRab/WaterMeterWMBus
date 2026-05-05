@@ -32,6 +32,9 @@ static const uint8_t DECODE_3OF6[64] = {
 
 WMBus::WMBus(CC1101& radio) : _radio(radio) {}
 
+uint32_t WMBus::syncCount() const { return _syncCount; }
+void     WMBus::resetSyncCount()  { _syncCount = 0; }
+
 // ============================================================
 //  Écoute d'un paquet wMBus
 // ============================================================
@@ -104,7 +107,7 @@ int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize)
         yield();
     }
 
-    // Sync détecté — laisser arriver les données
+    _syncCount++;
     delay(5);
 
     uint16_t total = 0;
@@ -121,6 +124,7 @@ int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize)
         }
     }
 
+    _radio.idle();
     return total;
 }
 

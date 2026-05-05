@@ -103,6 +103,7 @@ static void ledBlink(int n) {
 static void resetRfDiag() {
     rfDiagRssiMin = rfDiagRssiMax = rfDiagRssiSum = 0;
     rfDiagRssiN = rfDiagMarcFault = 0;
+    wmbus.resetSyncCount();
 }
 
 static void sampleRfDiag() {
@@ -121,8 +122,11 @@ static void sampleRfDiag() {
 static void reportRfDiag(const char* tag) {
     if (rfDiagRssiN == 0) return;
     int8_t avg = (int8_t)(rfDiagRssiSum / (int32_t)rfDiagRssiN);
-    log_i("RF diag [%s] RSSI min=%d max=%d moy=%d dBm / %u mesures",
-          tag, rfDiagRssiMin, rfDiagRssiMax, avg, rfDiagRssiN);
+    uint32_t syncs = wmbus.syncCount();
+    log_i("RF diag [%s] RSSI min=%d max=%d moy=%d dBm / %u mesures / %lu syncs",
+          tag, rfDiagRssiMin, rfDiagRssiMax, avg, rfDiagRssiN, syncs);
+    if (syncs == 0)
+        log_w("  RF diag : aucun sync word détecté — compteurs hors portée ou fréquence décalée");
     if (rfDiagMarcFault > 0)
         log_w("  RF diag : MARCSTATE hors IDLE %u fois (instabilité chip ?)", rfDiagMarcFault);
     if (rfDiagRssiMax < -95)

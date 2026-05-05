@@ -222,7 +222,11 @@ void CC1101::setFrequency(float mhz)
 void CC1101::idle()
 {
     _strobe(CC1101_SIDLE);
-    delay(2);
+    uint32_t t = millis();
+    while (marcstate() != CC1101_STATE_IDLE && millis() - t < 50)
+        delayMicroseconds(100);
+    if (marcstate() != CC1101_STATE_IDLE)
+        log_w("idle() : MARCSTATE=0x%02X après 50 ms (attendu IDLE)", marcstate());
     _strobe(CC1101_SFRX);
     _strobe(CC1101_SFTX);
 }

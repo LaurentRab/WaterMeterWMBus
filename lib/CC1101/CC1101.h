@@ -97,9 +97,11 @@ static constexpr uint8_t CC1101_READ_FLAG  = 0x80;
 static constexpr uint8_t CC1101_BURST_FLAG = 0x40;
 
 // ---- MARCSTATE values --------------------------------------
-static constexpr uint8_t CC1101_STATE_IDLE = 0x01;
-static constexpr uint8_t CC1101_STATE_RX   = 0x0D;
-static constexpr uint8_t CC1101_STATE_TX   = 0x13;
+static constexpr uint8_t CC1101_STATE_IDLE             = 0x01;
+static constexpr uint8_t CC1101_STATE_RX               = 0x0D;
+static constexpr uint8_t CC1101_STATE_TX               = 0x13;
+static constexpr uint8_t CC1101_STATE_RXFIFO_OVERFLOW  = 0x11;
+static constexpr uint8_t CC1101_STATE_TXFIFO_UNDERFLOW = 0x16;
 
 class CC1101 {
 public:

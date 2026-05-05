@@ -49,6 +49,9 @@ public:
 
     bool listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out);
 
+    uint32_t syncCount() const;
+    void     resetSyncCount();
+
     static void decodeMfr(uint16_t mField, char out[4]);
     static uint32_t bcdToUint32(const uint8_t* bcd, uint8_t len);
 
@@ -56,6 +59,7 @@ private:
     CC1101& _radio;
     WMBusMode _lastMode = WMBUS_T_MODE;
     bool      _configured = false;
+    uint32_t  _syncCount = 0;
 
     int _receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize);
     bool _decode3of6(const uint8_t* raw, uint16_t rawBits, uint8_t* out, uint8_t& outLen);
