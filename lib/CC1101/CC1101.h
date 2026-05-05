@@ -140,6 +140,7 @@ public:
 
     int8_t   readRSSI() const;
     bool     readGDO0() const;     // true si GDO0 est HIGH (sync word détecté)
+    uint8_t  gdo0Pin()  const { return _gdo0; }
 
     // Sniffer brut : désactive le filtre sync word, retourne le nombre d'octets
     // reçus dans le FIFO pendant durationMs. > ~1000/s = chaîne RF fonctionnelle.

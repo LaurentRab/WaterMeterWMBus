@@ -32,6 +32,15 @@ static const uint8_t DECODE_3OF6[64] = {
 
 WMBus::WMBus(CC1101& radio) : _radio(radio) {}
 
+volatile TaskHandle_t WMBus::_rxTaskHandle = nullptr;
+
+void IRAM_ATTR WMBus::_onGDO0ISR() {
+    BaseType_t woken = pdFALSE;
+    if (_rxTaskHandle)
+        vTaskNotifyGiveFromISR(_rxTaskHandle, &woken);
+    if (woken) portYIELD_FROM_ISR();
+}
+
 uint32_t WMBus::syncCount() const { return _syncCount; }
 void     WMBus::resetSyncCount()  { _syncCount = 0; }
 
@@ -97,20 +106,23 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
 int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize)
 {
     _radio.idle();
-    _radio.strobe(CC1101_SFRX);
+
+    _rxTaskHandle = xTaskGetCurrentTaskHandle();
+    ulTaskNotifyTake(pdTRUE, 0);
+    attachInterrupt(digitalPinToInterrupt(_radio.gdo0Pin()), _onGDO0ISR, RISING);
+
     _radio.strobe(CC1101_SRX);
 
-    uint32_t t0 = millis();
-    while (!_radio.readGDO0()) {
-        if (millis() - t0 > timeoutMs) {
-            _radio.idle();
-            return -1;
-        }
-        yield();
+    uint32_t notif = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(timeoutMs));
+    detachInterrupt(digitalPinToInterrupt(_radio.gdo0Pin()));
+    _rxTaskHandle = nullptr;
+
+    if (!notif) {
+        _radio.idle();
+        return -1;
     }
 
     _syncCount++;
-    delayMicroseconds(200);
 
     uint16_t total = 0;
     uint32_t lastData = millis();
@@ -127,16 +139,6 @@ int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize)
     }
 
     _radio.idle();
-
-    if (total > 0) {
-        char hex[16 * 3 + 1] = {};
-        int n = (total < 16) ? total : 16;
-        for (int i = 0; i < n; i++) sprintf(hex + i * 3, "%02X ", buf[i]);
-        log_w("SYNC raw[%d]: %s", total, hex);
-    } else {
-        log_w("SYNC ghost — GDO0 fired but FIFO empty (0 bytes)");
-    }
-
     return total;
 }
 

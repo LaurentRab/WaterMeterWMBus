@@ -371,9 +371,12 @@ uint8_t CC1101::drainFifo(uint8_t* buf, uint8_t maxLen)
 {
     uint8_t raw = readStatus(CC1101_RXBYTES);
     if (raw & 0x80) {
-        log_w("RXFIFO overflow — flush");
-        _strobe(CC1101_SFRX);
-        return 0;
+        if (marcstate() == CC1101_STATE_RXFIFO_OVERFLOW) {
+            log_w("RXFIFO overflow — flush");
+            _strobe(CC1101_SIDLE);
+            _strobe(CC1101_SFRX);
+            return 0;
+        }
     }
     uint8_t avail = raw & 0x7F;
     if (avail == 0) return 0;
