@@ -107,6 +107,9 @@ int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize)
 {
     _radio.idle();
 
+    UBaseType_t savedPrio = uxTaskPriorityGet(nullptr);
+    vTaskPrioritySet(nullptr, configMAX_PRIORITIES - 1);
+
     _rxTaskHandle = xTaskGetCurrentTaskHandle();
     ulTaskNotifyTake(pdTRUE, 0);
     attachInterrupt(digitalPinToInterrupt(_radio.gdo0Pin()), _onGDO0ISR, RISING);
@@ -118,6 +121,7 @@ int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize)
     _rxTaskHandle = nullptr;
 
     if (!notif) {
+        vTaskPrioritySet(nullptr, savedPrio);
         _radio.idle();
         return -1;
     }
@@ -138,6 +142,7 @@ int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize)
         }
     }
 
+    vTaskPrioritySet(nullptr, savedPrio);
     _radio.idle();
     return total;
 }
