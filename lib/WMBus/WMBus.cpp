@@ -110,7 +110,7 @@ int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize)
     }
 
     _syncCount++;
-    delay(5);
+    delayMicroseconds(200);
 
     uint16_t total = 0;
     uint32_t lastData = millis();
