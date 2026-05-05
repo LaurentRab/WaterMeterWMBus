@@ -95,6 +95,11 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
     if (!_parseHeader(decoded, decodedLen, out))
         return false;
 
+    if (!out.crcOk) {
+        log_d("CRC mismatch — dropped");
+        return false;
+    }
+
     out.valid = true;
     return true;
 }

@@ -90,8 +90,8 @@ void CC1101::configureWMBusTMode()
     _writeReg(CC1101_FREQ1,    0x6E);
     _writeReg(CC1101_FREQ0,    0x34);
 
-    // BW=541 kHz (CHANBW_E=0 M=2), 100 kbps, 2-FSK — élargi pour tolérer ±145 kHz de dérive (clone)
-    _writeReg(CC1101_MDMCFG4,  0x2B);  // CHANBW_E=0 CHANBW_M=2 DRATE_E=11
+    // BW=325 kHz (CHANBW_E=0 M=3), 100 kbps, 2-FSK — step 1: réduit depuis 541 kHz, cible finale 203 kHz
+    _writeReg(CC1101_MDMCFG4,  0x0B);  // CHANBW_E=0 CHANBW_M=3 DRATE_E=11
     _writeReg(CC1101_MDMCFG3,  0xF8);  // DRATE_M=248 → ~100 kbps
     _writeReg(CC1101_MDMCFG2,  0x02);  // 2-FSK, 16/16 sync
     _writeReg(CC1101_MDMCFG1,  0x42);  // 4 octets préambule
