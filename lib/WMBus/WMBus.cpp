@@ -65,13 +65,15 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
 
     if (mode == WMBUS_T_MODE) {
         if (!_decode3of6(rawBuf, rawLen * 8, decoded, decodedLen)) {
-            if (out.rssi > -90 && rawLen >= 4) {
-                // Signal correct mais trame illisible — loguer les premiers octets
-                // pour diagnostiquer dérive fréquentielle ou format inattendu.
-                char hex[48 * 3 + 1];
-                int n = rawLen < 48 ? rawLen : 48;
+            static uint16_t failCount = 0;
+            failCount++;
+            if (rawLen >= 4) {
+                char hex[16 * 3 + 1];
+                int n = rawLen < 16 ? rawLen : 16;
                 for (int i = 0; i < n; i++) sprintf(hex + i * 3, "%02X ", rawBuf[i]);
-                log_w("3of6 FAIL RSSI=%d dBm raw[%d]: %s", out.rssi, rawLen, hex);
+                log_w("3of6 FAIL #%u raw[%d] decoded=%u: %s", failCount, rawLen, decodedLen, hex);
+            } else {
+                log_w("3of6 FAIL #%u raw[%d] (trop court)", failCount, rawLen);
             }
             return false;
         }
@@ -125,6 +127,16 @@ int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize)
     }
 
     _radio.idle();
+
+    if (total > 0) {
+        char hex[16 * 3 + 1] = {};
+        int n = (total < 16) ? total : 16;
+        for (int i = 0; i < n; i++) sprintf(hex + i * 3, "%02X ", buf[i]);
+        log_w("SYNC raw[%d]: %s", total, hex);
+    } else {
+        log_w("SYNC ghost — GDO0 fired but FIFO empty (0 bytes)");
+    }
+
     return total;
 }
 
