@@ -489,9 +489,16 @@ void loop()
             }
 
             publishResults();
-            mqtt.publishScanStatus("pause");
-            scanPhase = SCAN_PAUSE;
-            phaseDeadline = millis() + PAUSE_MS;
+            if (SCAN_S_MS > 0) {
+                resetRfDiag();
+                mqtt.publishScanStatus("scanning_s");
+                scanPhase = SCAN_S;
+                phaseDeadline = millis() + SCAN_S_MS;
+            } else {
+                mqtt.publishScanStatus("pause");
+                scanPhase = SCAN_PAUSE;
+                phaseDeadline = millis() + PAUSE_MS;
+            }
         }
         break;
     }

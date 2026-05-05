@@ -61,8 +61,17 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
     uint8_t decodedLen = 0;
 
     if (mode == WMBUS_T_MODE) {
-        if (!_decode3of6(rawBuf, rawLen * 8, decoded, decodedLen))
+        if (!_decode3of6(rawBuf, rawLen * 8, decoded, decodedLen)) {
+            if (out.rssi > -90 && rawLen >= 4) {
+                // Signal correct mais trame illisible — loguer les premiers octets
+                // pour diagnostiquer dérive fréquentielle ou format inattendu.
+                char hex[48 * 3 + 1];
+                int n = rawLen < 48 ? rawLen : 48;
+                for (int i = 0; i < n; i++) sprintf(hex + i * 3, "%02X ", rawBuf[i]);
+                log_w("3of6 FAIL RSSI=%d dBm raw[%d]: %s", out.rssi, rawLen, hex);
+            }
             return false;
+        }
     } else {
         // S-mode : Manchester décodé par le CC1101, données NRZ directes
         decodedLen = (rawLen > sizeof(decoded)) ? sizeof(decoded) : rawLen;
