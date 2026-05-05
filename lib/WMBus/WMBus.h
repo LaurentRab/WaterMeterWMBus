@@ -25,7 +25,7 @@
 //  S-mode : 868.3 MHz, 32.768 kbps, Manchester (HW CC1101)
 // ============================================================
 
-enum WMBusMode : uint8_t { WMBUS_T_MODE, WMBUS_S_MODE };
+enum WMBusMode : uint8_t { WMBUS_T_MODE, WMBUS_S_MODE, WMBUS_C_MODE };
 
 struct WMBusPacket {
     uint8_t   lField;

@@ -202,6 +202,18 @@ void CC1101::configureWMBusSMode()
 }
 
 // ============================================================
+//  Configuration wMBus C1-mode
+//  868.95 MHz · 2-FSK · 100 kbps · NRZ (sans 3of6)
+//  Même config RF que T-mode — seul le décodage logiciel diffère
+// ============================================================
+
+void CC1101::configureWMBusCMode()
+{
+    configureWMBusTMode();
+    log_d("CC1101 configuré : 868.95 MHz · 2-FSK · 100 kbps (wMBus C1-mode, NRZ)");
+}
+
+// ============================================================
 //  Changement de fréquence à chaud
 // ============================================================
 

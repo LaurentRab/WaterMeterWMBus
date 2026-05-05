@@ -54,10 +54,11 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
     out.mode = mode;
 
     if (!_configured || mode != _lastMode) {
-        if (mode == WMBUS_T_MODE)
-            _radio.configureWMBusTMode();
-        else
-            _radio.configureWMBusSMode();
+        switch (mode) {
+        case WMBUS_T_MODE: _radio.configureWMBusTMode(); break;
+        case WMBUS_C_MODE: _radio.configureWMBusCMode(); break;
+        case WMBUS_S_MODE: _radio.configureWMBusSMode(); break;
+        }
         _lastMode = mode;
         _configured = true;
     }
@@ -72,17 +73,18 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
     uint8_t decoded[192];
     uint8_t decodedLen = 0;
 
-    if (mode == WMBUS_T_MODE) {
-        if (!_decode3of6(rawBuf, rawLen * 8, decoded, decodedLen)) {
+    if (mode == WMBUS_T_MODE || mode == WMBUS_C_MODE) {
+        if (mode == WMBUS_C_MODE) {
+            // C1 : données NRZ directes (pas de 3of6)
+            decodedLen = (rawLen > sizeof(decoded)) ? sizeof(decoded) : rawLen;
+            memcpy(decoded, rawBuf, decodedLen);
+        } else if (!_decode3of6(rawBuf, rawLen * 8, decoded, decodedLen)) {
             static uint16_t failCount = 0;
+            static uint32_t lastLog = 0;
             failCount++;
-            if (rawLen >= 4) {
-                char hex[16 * 3 + 1];
-                int n = rawLen < 16 ? rawLen : 16;
-                for (int i = 0; i < n; i++) sprintf(hex + i * 3, "%02X ", rawBuf[i]);
-                log_w("3of6 FAIL #%u raw[%d] decoded=%u: %s", failCount, rawLen, decodedLen, hex);
-            } else {
-                log_w("3of6 FAIL #%u raw[%d] (trop court)", failCount, rawLen);
+            if (millis() - lastLog > 30000) {
+                lastLog = millis();
+                log_w("3of6 FAIL: %u depuis boot (bruit)", failCount);
             }
             return false;
         }
