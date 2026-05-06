@@ -98,7 +98,14 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
         return false;
 
     if (!out.crcOk) {
-        log_d("CRC mismatch — dropped");
+        if (mode == WMBUS_C_MODE && decodedLen >= 11) {
+            char mfr[4];
+            decodeMfr(out.mField, mfr);
+            log_i("C1 CRC-A fail but frame: L=%u C=0x%02X mfr=%s serial=%08lu type=0x%02X CI=0x%02X len=%u RSSI=%d",
+                  out.lField, out.cField, mfr, out.serialBCD, out.deviceType, out.ciField, decodedLen, out.rssi);
+            out.valid = true;
+            return true;
+        }
         return false;
     }
 
