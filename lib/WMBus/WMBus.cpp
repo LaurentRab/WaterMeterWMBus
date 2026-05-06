@@ -58,6 +58,7 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
         case WMBUS_T_MODE: _radio.configureWMBusTMode(); break;
         case WMBUS_C_MODE: _radio.configureWMBusCMode(); break;
         case WMBUS_S_MODE: _radio.configureWMBusSMode(); break;
+        case WMBUS_R_MODE: break; // R-mode config handled externally (per-channel)
         }
         _lastMode = mode;
         _configured = true;

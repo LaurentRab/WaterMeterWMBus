@@ -214,6 +214,81 @@ void CC1101::configureWMBusCMode()
 }
 
 // ============================================================
+//  Configuration wMBus R2-mode (écoute passive)
+//  868.03–868.57 MHz · 2-FSK + Manchester HW · 4.8 kchip/s · déviation ±6 kHz
+//  10 canaux (R2a–R2j), pas de 60 kHz
+//  Même sync word et frame format que S-mode (Radio Link A, 0x7696)
+// ============================================================
+
+void CC1101::configureWMBusRMode(uint8_t channel)
+{
+    if (channel > 9) channel = 0;
+
+    _writeReg(CC1101_IOCFG2,   0x0D);
+    _writeReg(CC1101_IOCFG0,   0x06);
+
+    _writeReg(CC1101_FIFOTHR,  0x47);
+
+    _writeReg(CC1101_SYNC1,    0x76);  // Sync word R2 = 0x7696 (= S-mode)
+    _writeReg(CC1101_SYNC0,    0x96);
+
+    _writeReg(CC1101_PKTLEN,   0xFF);
+    _writeReg(CC1101_PKTCTRL1, 0x00);
+    _writeReg(CC1101_PKTCTRL0, 0x02);
+
+    _writeReg(CC1101_FSCTRL1,  0x08);
+
+    // Fréquence : 868.03 + channel * 0.06 MHz
+    float freqMHz = 868.03f + channel * 0.06f;
+    uint32_t reg = (uint32_t)(freqMHz * 1e6f / 26e6f * 65536.0f + 0.5f);
+    _writeReg(CC1101_FREQ2, (reg >> 16) & 0xFF);
+    _writeReg(CC1101_FREQ1, (reg >> 8)  & 0xFF);
+    _writeReg(CC1101_FREQ0,  reg        & 0xFF);
+
+    // BW=58 kHz (minimum CC1101), 4.8 kchip/s Manchester, 2-FSK
+    _writeReg(CC1101_MDMCFG4,  0xF7);  // CHANBW_E=3 CHANBW_M=3 DRATE_E=7
+    _writeReg(CC1101_MDMCFG3,  0x83);  // DRATE_M=131 → ~4800 bps
+    _writeReg(CC1101_MDMCFG2,  0x0A);  // 2-FSK, Manchester ON, 16/16 sync
+    _writeReg(CC1101_MDMCFG1,  0x22);  // 4 octets préambule
+    _writeReg(CC1101_MDMCFG0,  0xF8);
+
+    _writeReg(CC1101_DEVIATN,  0x17);  // ±5.95 kHz ≈ ±6 kHz
+
+    _writeReg(CC1101_MCSM1,    0x00);
+    _writeReg(CC1101_MCSM0,    0x18);
+
+    _writeReg(CC1101_FOCCFG,   0x1D);
+    _writeReg(CC1101_BSCFG,    0x1C);
+    _writeReg(CC1101_AGCCTRL2, 0xC7);
+    _writeReg(CC1101_AGCCTRL1, 0x00);
+    _writeReg(CC1101_AGCCTRL0, 0xB0);
+
+    _writeReg(CC1101_WORCTRL,  0xFB);
+
+    _writeReg(CC1101_FREND1,   0xB6);
+    _writeReg(CC1101_FREND0,   0x10);
+
+    _writeReg(CC1101_FSCAL3,   0xEA);
+    _writeReg(CC1101_FSCAL2,   0x2A);
+    _writeReg(CC1101_FSCAL1,   0x00);
+    _writeReg(CC1101_FSCAL0,   0x1F);
+
+    // Registres TEST pour bas débit (< 26 kbps)
+    _writeReg(CC1101_TEST2,    0x81);
+    _writeReg(CC1101_TEST1,    0x35);
+    _writeReg(CC1101_TEST0,    0x09);
+
+    _select(); _waitMiso();
+    SPI.transfer(0x7E | CC1101_BURST_FLAG);
+    SPI.transfer(0xC0);
+    for (int i = 1; i < 8; i++) SPI.transfer(0x00);
+    _deselect();
+
+    log_d("CC1101 configuré : %.2f MHz · 2-FSK+Manchester · 4.8 kchip/s (wMBus R2-%c)",
+          freqMHz, 'a' + channel);
+}
+
+// ============================================================
 //  Changement de fréquence à chaud
 // ============================================================
 

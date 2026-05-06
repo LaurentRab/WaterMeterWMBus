@@ -119,6 +119,10 @@ public:
     // Configure pour wMBus C1-mode (868.95 MHz, 2-FSK, 100 kbps, NRZ sans 3of6)
     void configureWMBusCMode();
 
+    // Configure pour wMBus R2-mode (868.03–868.57 MHz, 2-FSK+Manchester, 4.8 kchip/s)
+    // channel : 0–9 → R2a (868.03) à R2j (868.57 MHz), pas de 60 kHz
+    void configureWMBusRMode(uint8_t channel = 0);
+
     // Change la fréquence porteuse à chaud (sans reconfigurer les autres registres)
     void setFrequency(float mhz);
 
