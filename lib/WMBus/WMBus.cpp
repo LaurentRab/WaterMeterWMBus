@@ -82,9 +82,9 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
             static uint16_t failCount = 0;
             static uint32_t lastLog = 0;
             failCount++;
-            if (millis() - lastLog > 30000) {
+            if (millis() - lastLog > 300000) {
                 lastLog = millis();
-                log_w("3of6 FAIL: %u depuis boot (bruit)", failCount);
+                log_d("3of6 bruit: %u faux syncs depuis boot", failCount);
             }
             return false;
         }
@@ -98,14 +98,7 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
         return false;
 
     if (!out.crcOk) {
-        if (mode == WMBUS_C_MODE && decodedLen >= 11) {
-            char mfr[4];
-            decodeMfr(out.mField, mfr);
-            log_i("C1 CRC-A fail but frame: L=%u C=0x%02X mfr=%s serial=%08lu type=0x%02X CI=0x%02X len=%u RSSI=%d",
-                  out.lField, out.cField, mfr, out.serialBCD, out.deviceType, out.ciField, decodedLen, out.rssi);
-            out.valid = true;
-            return true;
-        }
+        log_d("CRC mismatch — dropped");
         return false;
     }
 
