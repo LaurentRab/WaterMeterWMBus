@@ -71,6 +71,15 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
     out.rssi = _radio.readRSSI();
     _radio.idle();
 
+    if (mode == WMBUS_R_MODE) {
+        char hex[64];
+        int hLen = 0;
+        int show = (rawLen > 20) ? 20 : rawLen;
+        for (int i = 0; i < show && hLen < 60; i++)
+            hLen += snprintf(hex + hLen, sizeof(hex) - hLen, "%02X ", rawBuf[i]);
+        log_w("R2 sync! %d octets RSSI=%d dBm | %s", rawLen, out.rssi, hex);
+    }
+
     uint8_t decoded[192];
     uint8_t decodedLen = 0;
 
@@ -95,11 +104,26 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
         memcpy(decoded, rawBuf, decodedLen);
     }
 
-    if (!_parseHeader(decoded, decodedLen, out))
+    if (!_parseHeader(decoded, decodedLen, out)) {
+        if (mode == WMBUS_R_MODE)
+            log_w("R2 parse fail: decodedLen=%d (need >=11)", decodedLen);
         return false;
+    }
 
     if (!out.crcOk) {
-        log_d("CRC mismatch — dropped");
+        if (mode == WMBUS_R_MODE) {
+            char mfr[4];
+            decodeMfr(out.mField, mfr);
+            uint16_t crcCalc = _crc16EN13757(decoded, 10);
+            uint16_t crcRecv = (decodedLen >= 12)
+                ? ((uint16_t)decoded[10] << 8) | decoded[11] : 0;
+            log_w("R2 CRC fail: L=%02X C=%02X M=%s ser=%08lu dev=%02X "
+                  "| CRC calc=%04X recv=%04X",
+                  out.lField, out.cField, mfr, out.serialBCD,
+                  out.deviceType, crcCalc, crcRecv);
+        } else {
+            log_d("CRC mismatch — dropped");
+        }
         return false;
     }
 
