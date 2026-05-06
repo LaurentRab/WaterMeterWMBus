@@ -448,9 +448,30 @@ void setup()
             mqtt.publishHADiscovery(METERS[i].serial);
     }
 
-    mqtt.publishScanStatus("scanning_t");
-    scanPhase = SCAN_T;
-    phaseDeadline = millis() + SCAN_T_MS;
+    if (SCAN_T_MS > 0) {
+        mqtt.publishScanStatus("scanning_t");
+        scanPhase = SCAN_T;
+        phaseDeadline = millis() + SCAN_T_MS;
+    } else if (SCAN_C1_MS > 0) {
+        mqtt.publishScanStatus("scanning_c");
+        scanPhase = SCAN_C1;
+        phaseDeadline = millis() + SCAN_C1_MS;
+    } else if (SCAN_S_MS > 0) {
+        mqtt.publishScanStatus("scanning_s");
+        scanPhase = SCAN_S;
+        phaseDeadline = millis() + SCAN_S_MS;
+    } else if (SCAN_R_MS > 0) {
+        r2Channel = 0;
+        radio.configureWMBusRMode(0);
+        mqtt.publishScanStatus("scanning_r2a");
+        log_i("--- Début scan R2-mode (10 canaux × %lus) ---", R2_PER_CHAN_MS / 1000);
+        scanPhase = SCAN_R;
+        phaseDeadline = millis() + R2_PER_CHAN_MS;
+    } else {
+        mqtt.publishScanStatus("pause");
+        scanPhase = SCAN_PAUSE;
+        phaseDeadline = millis() + PAUSE_MS;
+    }
 }
 
 // ============================================================
@@ -511,6 +532,14 @@ void loop()
                 mqtt.publishScanStatus("scanning_s");
                 scanPhase = SCAN_S;
                 phaseDeadline = millis() + SCAN_S_MS;
+            } else if (SCAN_R_MS > 0) {
+                resetRfDiag();
+                r2Channel = 0;
+                radio.configureWMBusRMode(0);
+                mqtt.publishScanStatus("scanning_r2a");
+                log_i("--- Début scan R2-mode (10 canaux × %lus) ---", R2_PER_CHAN_MS / 1000);
+                scanPhase = SCAN_R;
+                phaseDeadline = millis() + R2_PER_CHAN_MS;
             } else {
                 mqtt.publishScanStatus("pause");
                 scanPhase = SCAN_PAUSE;
