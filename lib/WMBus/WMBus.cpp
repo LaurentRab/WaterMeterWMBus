@@ -251,20 +251,30 @@ bool WMBus::_parseHeader(const uint8_t* data, uint8_t len, WMBusPacket& pkt)
     pkt.dataLen = (len > sizeof(pkt.data)) ? sizeof(pkt.data) : len;
     memcpy(pkt.data, data, pkt.dataLen);
 
-    // CRC sur le premier bloc (10 octets data + 2 octets CRC)
+    // Format A : CRC sur le premier bloc (10 octets + 2 CRC)
     if (len >= 12) {
         uint16_t crcCalc = _crc16EN13757(data, 10);
         uint16_t crcRecv = (data[10] << 8) | data[11];
         pkt.crcOk = (crcCalc == crcRecv);
 
-        if (!pkt.crcOk) {
-            // Le CI-field est en fait à l'offset 10 du payload décodé,
-            // mais dans le format CRC-block, les 2 octets CRC sont insérés.
-            // On reparse : L(1) + C(1) + M(2) + A(6) = 10 octets, puis CRC(2), puis CI...
+        if (pkt.crcOk) {
             pkt.ciField = (len > 12) ? data[12] : 0;
         }
-    } else {
-        pkt.crcOk = false;
+    }
+
+    // Format B fallback : CRC sur la trame entière (L+1 octets data + 2 CRC)
+    if (!pkt.crcOk) {
+        uint8_t frameLen = pkt.lField + 1;  // L + payload
+        uint8_t totalLen = frameLen + 2;     // + CRC
+        if (totalLen >= 13 && len >= totalLen) {
+            uint16_t crcCalc = _crc16EN13757(data, frameLen);
+            uint16_t crcRecv = ((uint16_t)data[frameLen] << 8) | data[frameLen + 1];
+            pkt.crcOk = (crcCalc == crcRecv);
+            if (pkt.crcOk) {
+                pkt.ciField = data[10];
+                log_i("Format B détecté (CRC fin de trame OK)");
+            }
+        }
     }
 
     return true;

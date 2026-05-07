@@ -74,6 +74,7 @@ static ScanPhase  scanPhase = SCAN_T;
 static uint32_t   phaseDeadline = 0;
 static uint8_t    r2Channel = 0;       // canal R2 courant (0–9)
 static bool       c1SyncB = false;     // true = sync Format B actif sur C1
+static bool       sSyncB  = false;     // true = sync Format B actif sur S
 
 // Diagnostic RF — réinitialisé à chaque cycle de scan
 static int8_t   rfDiagRssiMin   = 0;
@@ -609,9 +610,20 @@ void loop()
             sampleRfDiag();
         }
 
+        // Mi-temps : switch vers sync Format B (0xF68D)
+        if (!sSyncB && remaining <= SCAN_S_MS / 2) {
+            sSyncB = true;
+            radio.setSyncWord(0xF68D);
+            reportRfDiag("S-A");
+            resetRfDiag();
+            log_i("S-mode : switch sync word → Format B (0xF68D)");
+        }
+
         if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
             log_i("--- Fin scan S-mode ---");
-            reportRfDiag("S-mode");
+            reportRfDiag(sSyncB ? "S-B" : "S-A");
+            sSyncB = false;
+            radio.setSyncWord(0x7696);
             publishResults();
             // Transition vers polling actif
             log_i("--- Début polling REQ-UD2 ---");
