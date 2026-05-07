@@ -101,6 +101,32 @@ Le diagnostic est réduit pour ne pas saturer la console : seuls les headers "pl
 
 Les pics RSSI à -69 dBm sur 868.51 MHz sont intéressants (25 dB au-dessus du bruit) mais ne correspondent pas à du wMBus — pas de sync word matché. Probablement un autre dispositif ISM 868 MHz dans l'immeuble.
 
+### Scan journée (7 mai, 7h00–20h00) — Confirmation statistique
+
+Même firmware R2-only (commit `395b0ad`), 20+ cycles complets supplémentaires (~3h20 de données analysées). Résultats strictement identiques au scan nocturne.
+
+**Profil RF consolidé des 10 canaux (7h+ cumulées, 40+ cycles) :**
+
+| Canal | Fréquence | Syncs typiques | RSSI moy | Diagnostic |
+|-------|-----------|---------------|----------|------------|
+| R2-a | 868.03 MHz | 0–2 | -96 dBm | Quasi-mort |
+| R2-b | 868.09 MHz | 2–5 | -101 dBm | Bruit statistique |
+| R2-c | 868.15 MHz | 0–3 | -98 dBm | Bruit statistique |
+| R2-d | 868.21 MHz | 1–7 | -100 dBm | Bruit statistique |
+| R2-e | 868.27 MHz | 1–8 | -100 dBm | Bruit statistique |
+| **R2-f** | **868.33 MHz** | **0 constant** | **-92 dBm** | **Brouilleur ISM (signal fort, jamais de sync)** |
+| R2-g | 868.39 MHz | 1–6 | -101 dBm | Bruit statistique |
+| R2-h | 868.45 MHz | 0–1 | -94 dBm | Signal continu, anti-sync |
+| **R2-i** | **868.51 MHz** | **1–12** | **-93 dBm** | **Plus actif, pics -75 dBm, non-wMBus** |
+| R2-j | 868.57 MHz | 1–6 | -101 dBm | Bruit statistique |
+
+**Validation statistique** : à 4.8 kbps sur 60s le CC1101 voit ~288 000 bits. La probabilité de matcher 0x7696 (16 bits) par hasard est 288000/65536 ≈ **4.4 matchs/canal** — exactement ce qu'on observe sur les canaux sans interférence. Les écarts (R2-f à 0, R2-i à 12) s'expliquent par la présence de signaux non-wMBus qui modifient le profil statistique du flux reçu.
+
+**Observations environnementales :**
+- R2-f (868.33 MHz) : brouilleur ISM permanent — RSSI le plus fort mais 0 sync, jour comme nuit. Probablement un dispositif domotique ou station météo dans l'immeuble.
+- R2-i (868.51 MHz) : activité sporadique non-wMBus, pics jusqu'à -75 dBm. Probablement un autre équipement ISM 868 MHz.
+- R2-h (868.45 MHz) : signal continu faible qui supprime les faux syncs (0–1 au lieu de ~4).
+
 ---
 
 ## Ce qu'on sait avec certitude
