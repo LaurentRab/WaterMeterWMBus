@@ -49,7 +49,7 @@ void     WMBus::resetSyncCount()  { _syncCount = 0; }
 // ============================================================
 
 bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out,
-                   uint16_t syncWord)
+                   uint16_t syncWord, bool dualDecode)
 {
     memset(&out, 0, sizeof(out));
     out.mode = mode;
@@ -82,8 +82,7 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out,
 
     if (mode == WMBUS_T_MODE || mode == WMBUS_C_MODE) {
         if (mode == WMBUS_C_MODE) {
-            // C1 : données NRZ directes (pas de 3of6)
-            decodedLen = (rawLen > sizeof(decoded)) ? sizeof(decoded) : rawLen;
+            decodedLen = (rawLen > (int)sizeof(decoded)) ? sizeof(decoded) : rawLen;
             memcpy(decoded, rawBuf, decodedLen);
         } else if (!_decode3of6(rawBuf, rawLen * 8, decoded, decodedLen)) {
             static uint16_t failCount = 0;
@@ -96,16 +95,47 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out,
             return false;
         }
     } else {
-        // S-mode : Manchester décodé par le CC1101, données NRZ directes
-        decodedLen = (rawLen > sizeof(decoded)) ? sizeof(decoded) : rawLen;
+        decodedLen = (rawLen > (int)sizeof(decoded)) ? sizeof(decoded) : rawLen;
         memcpy(decoded, rawBuf, decodedLen);
     }
 
     if (!_parseHeader(decoded, decodedLen, out)) {
         if (mode == WMBUS_R_MODE)
             log_d("R2 parse fail: decodedLen=%d", decodedLen);
+        // dualDecode : si NRZ échoue au parse, essayer 3of6
+        if (dualDecode && mode == WMBUS_C_MODE) {
+            uint8_t dec3of6[192];
+            uint8_t dec3of6Len = 0;
+            if (_decode3of6(rawBuf, rawLen * 8, dec3of6, dec3of6Len)) {
+                memset(&out, 0, sizeof(out));
+                out.mode = WMBUS_T_MODE;
+                out.rssi = _radio.readRSSI();
+                if (_parseHeader(dec3of6, dec3of6Len, out)) {
+                    log_i("dualDecode: 3of6 OK après échec NRZ");
+                    goto parsed;
+                }
+            }
+        }
         return false;
     }
+
+    // dualDecode : si NRZ a un header mais CRC échoue, essayer 3of6
+    if (dualDecode && mode == WMBUS_C_MODE && !out.crcOk) {
+        uint8_t dec3of6[192];
+        uint8_t dec3of6Len = 0;
+        if (_decode3of6(rawBuf, rawLen * 8, dec3of6, dec3of6Len)) {
+            WMBusPacket alt;
+            memset(&alt, 0, sizeof(alt));
+            alt.mode = WMBUS_T_MODE;
+            alt.rssi = out.rssi;
+            if (_parseHeader(dec3of6, dec3of6Len, alt) && alt.crcOk) {
+                log_i("dualDecode: 3of6 CRC OK (NRZ CRC avait échoué)");
+                out = alt;
+            }
+        }
+    }
+
+parsed:
 
     if (!out.crcOk) {
         if (mode == WMBUS_R_MODE) {

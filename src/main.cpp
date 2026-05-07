@@ -579,7 +579,7 @@ void loop()
         uint32_t listenMs = (remaining > 2000) ? 2000 : remaining;
 
         if (listenMs > 0) {
-            if (wmbus.listen(WMBUS_C_MODE, listenMs, pkt, 0xF68D))
+            if (wmbus.listen(WMBUS_C_MODE, listenMs, pkt, 0xF68D, true))
                 handlePacket(pkt);
             sampleRfDiag();
         }
