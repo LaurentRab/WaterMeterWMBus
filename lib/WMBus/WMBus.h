@@ -49,11 +49,17 @@ public:
 
     bool listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out);
 
+    // Envoie REQ-UD2 puis écoute la réponse pendant timeoutMs.
+    bool poll(WMBusMode mode, uint32_t serialBCD, uint16_t mfr,
+              uint8_t version, uint8_t devType,
+              uint32_t timeoutMs, WMBusPacket& response);
+
     uint32_t syncCount() const;
     void     resetSyncCount();
 
     static void decodeMfr(uint16_t mField, char out[4]);
     static uint32_t bcdToUint32(const uint8_t* bcd, uint8_t len);
+    static void uint32ToBcdLE(uint32_t val, uint8_t out[4]);
 
 private:
     CC1101& _radio;

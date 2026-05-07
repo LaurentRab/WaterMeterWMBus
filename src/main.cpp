@@ -69,10 +69,11 @@ static MeterStat meterStats[METER_COUNT] = {};
 static uint32_t totalPackets = 0;
 
 // État global du scan (machine à états dans loop())
-enum ScanPhase : uint8_t { SCAN_T, SCAN_C1, SCAN_S, SCAN_R, SCAN_PAUSE, SCAN_DONE };
+enum ScanPhase : uint8_t { SCAN_T, SCAN_C1, SCAN_S, SCAN_R, SCAN_POLL, SCAN_PAUSE, SCAN_DONE };
 static ScanPhase  scanPhase = SCAN_T;
 static uint32_t   phaseDeadline = 0;
 static uint8_t    r2Channel = 0;       // canal R2 courant (0–9)
+static bool       c1SyncB = false;     // true = sync Format B actif sur C1
 
 // Diagnostic RF — réinitialisé à chaque cycle de scan
 static int8_t   rfDiagRssiMin   = 0;
@@ -560,9 +561,20 @@ void loop()
             sampleRfDiag();
         }
 
+        // Mi-temps : switch vers sync Format B (0xF68D)
+        if (!c1SyncB && remaining <= SCAN_C1_MS / 2) {
+            c1SyncB = true;
+            radio.setSyncWord(0xF68D);
+            reportRfDiag("C1-A");
+            resetRfDiag();
+            log_i("C1-mode : switch sync word → Format B (0xF68D)");
+        }
+
         if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
             log_i("--- Fin scan C1-mode ---");
-            reportRfDiag("C1-mode");
+            reportRfDiag(c1SyncB ? "C1-B" : "C1-A");
+            c1SyncB = false;
+            radio.setSyncWord(0x543D);
             publishResults();
             if (SCAN_S_MS > 0) {
                 resetRfDiag();
@@ -601,20 +613,68 @@ void loop()
             log_i("--- Fin scan S-mode ---");
             reportRfDiag("S-mode");
             publishResults();
-            if (SCAN_R_MS > 0) {
-                resetRfDiag();
-                r2Channel = 0;
-                radio.configureWMBusRMode(0);
-                mqtt.publishScanStatus("scanning_r2a");
-                log_i("--- Début scan R2-mode (10 canaux × %lus) ---", R2_PER_CHAN_MS / 1000);
-                scanPhase = SCAN_R;
-                phaseDeadline = millis() + R2_PER_CHAN_MS;
+            // Transition vers polling actif
+            log_i("--- Début polling REQ-UD2 ---");
+            mqtt.publishScanStatus("polling");
+            scanPhase = SCAN_POLL;
+        }
+        break;
+    }
+
+    case SCAN_POLL: {
+        static uint8_t pollMeter = 0;
+        static uint8_t pollVer = 0;
+        static uint8_t pollStep = 0;   // 0=wildcard FF/FF, 1=FF/07, 2-17=ver 0x00-0x0F
+        static WMBusMode pollMode = WMBUS_S_MODE;
+
+        uint32_t serial = METERS[pollMeter].serial;
+        if (serial == 0) { pollMeter++; pollStep = 0; }
+
+        if (pollMeter >= METER_COUNT) {
+            if (pollMode == WMBUS_S_MODE) {
+                pollMode = WMBUS_C_MODE;
+                pollMeter = 0; pollStep = 0;
+                log_i("--- Polling : switch vers C1-mode ---");
             } else {
-                mqtt.publishScanStatus("pause");
-                scanPhase = SCAN_PAUSE;
-                phaseDeadline = millis() + PAUSE_MS;
+                log_i("--- Fin polling (aucune réponse) ---");
+                pollMeter = 0; pollStep = 0;
+                pollMode = WMBUS_S_MODE;
+                if (SCAN_R_MS > 0) {
+                    resetRfDiag();
+                    r2Channel = 0;
+                    radio.configureWMBusRMode(0);
+                    mqtt.publishScanStatus("scanning_r2a");
+                    log_i("--- Début scan R2-mode (10 canaux × %lus) ---", R2_PER_CHAN_MS / 1000);
+                    scanPhase = SCAN_R;
+                    phaseDeadline = millis() + R2_PER_CHAN_MS;
+                } else {
+                    mqtt.publishScanStatus("pause");
+                    scanPhase = SCAN_PAUSE;
+                    phaseDeadline = millis() + PAUSE_MS;
+                }
+                break;
             }
         }
+
+        uint8_t ver, typ;
+        if (pollStep == 0)      { ver = 0xFF; typ = 0xFF; }
+        else if (pollStep == 1) { ver = 0xFF; typ = 0x07; }
+        else                    { ver = pollStep - 2; typ = 0x07; }
+
+        const char* modeStr = (pollMode == WMBUS_S_MODE) ? "S" : "C1";
+        log_i("POLL %s ser=%lu ver=%02X typ=%02X", modeStr, serial, ver, typ);
+
+        WMBusPacket resp;
+        if (wmbus.poll(pollMode, serial, 0x2674, ver, typ, 500, resp)) {
+            char mfr[4];
+            WMBus::decodeMfr(resp.mField, mfr);
+            log_w("POLL RÉPONSE! L=%02X C=%02X M=%s ser=%08lu RSSI=%d dBm",
+                  resp.lField, resp.cField, mfr, resp.serialBCD, resp.rssi);
+            handlePacket(resp);
+        }
+
+        pollStep++;
+        if (pollStep >= 18) { pollStep = 0; pollMeter++; }
         break;
     }
 

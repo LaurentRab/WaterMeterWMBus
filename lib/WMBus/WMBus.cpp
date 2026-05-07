@@ -309,3 +309,77 @@ uint32_t WMBus::bcdToUint32(const uint8_t* bcd, uint8_t len)
         result = result * 100 + ((bcd[i] >> 4) * 10 + (bcd[i] & 0x0F));
     return result;
 }
+
+void WMBus::uint32ToBcdLE(uint32_t val, uint8_t out[4])
+{
+    for (int i = 0; i < 4; i++) {
+        uint8_t lo = val % 10; val /= 10;
+        uint8_t hi = val % 10; val /= 10;
+        out[i] = (hi << 4) | lo;
+    }
+}
+
+// ============================================================
+//  Polling actif — REQ-UD2 puis écoute réponse
+// ============================================================
+
+bool WMBus::poll(WMBusMode mode, uint32_t serialBCD, uint16_t mfr,
+                 uint8_t version, uint8_t devType,
+                 uint32_t timeoutMs, WMBusPacket& response)
+{
+    memset(&response, 0, sizeof(response));
+    response.mode = mode;
+
+    if (!_configured || mode != _lastMode) {
+        switch (mode) {
+        case WMBUS_T_MODE: _radio.configureWMBusTMode(); break;
+        case WMBUS_C_MODE: _radio.configureWMBusCMode(); break;
+        case WMBUS_S_MODE: _radio.configureWMBusSMode(); break;
+        case WMBUS_R_MODE: break;
+        }
+        _lastMode = mode;
+        _configured = true;
+    }
+
+    uint8_t frame[12];
+    frame[0] = 0x09;                         // L-field
+    frame[1] = 0x7B;                         // C-field: REQ-UD2, FCB=1
+    frame[2] = mfr & 0xFF;                   // M-field LE
+    frame[3] = (mfr >> 8) & 0xFF;
+    uint32ToBcdLE(serialBCD, frame + 4);     // A-field: serial BCD LE
+    frame[8] = version;
+    frame[9] = devType;
+    uint16_t crc = _crc16EN13757(frame, 10);
+    frame[10] = (crc >> 8) & 0xFF;
+    frame[11] = crc & 0xFF;
+
+    if (!_radio.sendPacket(frame, 12)) {
+        log_w("poll: TX échoué");
+        return false;
+    }
+
+    uint8_t rawBuf[256];
+    int rawLen = _receiveRaw(timeoutMs, rawBuf, sizeof(rawBuf));
+    if (rawLen <= 0) return false;
+
+    response.rssi = _radio.readRSSI();
+    _radio.idle();
+
+    uint8_t decoded[192];
+    uint8_t decodedLen = (rawLen > (int)sizeof(decoded)) ? sizeof(decoded) : rawLen;
+    memcpy(decoded, rawBuf, decodedLen);
+
+    if (!_parseHeader(decoded, decodedLen, response))
+        return false;
+
+    if (!response.crcOk) {
+        char mfrStr[4];
+        decodeMfr(response.mField, mfrStr);
+        log_w("poll response CRC fail: L=%02X C=%02X M=%s ser=%08lu",
+              response.lField, response.cField, mfrStr, response.serialBCD);
+        return false;
+    }
+
+    response.valid = true;
+    return true;
+}

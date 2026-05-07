@@ -149,6 +149,13 @@ public:
     bool     readGDO0() const;     // true si GDO0 est HIGH (sync word détecté)
     uint8_t  gdo0Pin()  const { return _gdo0; }
 
+    // Envoie un paquet (le CC1101 ajoute préambule + sync word automatiquement).
+    // Utilise le mode fixed-length, restaure infinite-length après TX.
+    bool sendPacket(const uint8_t* data, uint8_t len);
+
+    // Change le sync word à chaud (2 registres SYNC1/SYNC0).
+    void setSyncWord(uint16_t sync);
+
     // Sniffer brut : désactive le filtre sync word, retourne le nombre d'octets
     // reçus dans le FIFO pendant durationMs. > ~1000/s = chaîne RF fonctionnelle.
     uint16_t rawSniff(uint32_t durationMs);

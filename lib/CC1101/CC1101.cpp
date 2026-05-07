@@ -319,6 +319,41 @@ void CC1101::idle()
 }
 
 // ============================================================
+//  TX — envoi d'un paquet (préambule + sync ajoutés par le CC1101)
+// ============================================================
+
+bool CC1101::sendPacket(const uint8_t* data, uint8_t len)
+{
+    if (len == 0 || len > 64) return false;
+
+    idle();
+
+    _writeReg(CC1101_PKTCTRL0, 0x00);  // fixed-length → auto-IDLE après TX
+    _writeReg(CC1101_PKTLEN, len);
+    _strobe(CC1101_SFTX);
+    writeFifo(data, len);
+    _strobe(CC1101_STX);
+
+    uint32_t t = millis();
+    while (marcstate() == CC1101_STATE_TX && millis() - t < 100)
+        delayMicroseconds(200);
+
+    bool ok = (marcstate() == CC1101_STATE_IDLE);
+    if (!ok)
+        log_w("sendPacket: MARCSTATE=0x%02X après TX (attendu IDLE)", marcstate());
+
+    _writeReg(CC1101_PKTCTRL0, 0x02);  // restore infinite-length
+    _writeReg(CC1101_PKTLEN, 0xFF);
+    return ok;
+}
+
+void CC1101::setSyncWord(uint16_t sync)
+{
+    _writeReg(CC1101_SYNC1, sync >> 8);
+    _writeReg(CC1101_SYNC0, sync & 0xFF);
+}
+
+// ============================================================
 //  Sniffer brut — SYNC_MODE désactivé, compte les octets FIFO
 //  > ~1000 octets/s : démodulateur RF fonctionnel
 //  < 100 octets sur toute la durée : chaîne RF défaillante
