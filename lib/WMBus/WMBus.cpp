@@ -65,10 +65,9 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
     }
 
     uint8_t rawBuf[256];
-    int rawLen = _receiveRaw(timeoutMs, rawBuf, sizeof(rawBuf));
+    int rawLen = _receiveRaw(timeoutMs, rawBuf, sizeof(rawBuf), &out.rssi);
     if (rawLen <= 0) return false;
 
-    out.rssi = _radio.readRSSI();
     _radio.idle();
 
     if (mode == WMBUS_R_MODE)
@@ -139,7 +138,7 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
 //  Réception brute (attend sync word puis lit le FIFO)
 // ============================================================
 
-int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize)
+int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize, int8_t* rssiOut)
 {
     _radio.idle();
 
@@ -161,6 +160,9 @@ int WMBus::_receiveRaw(uint32_t timeoutMs, uint8_t* buf, uint16_t bufSize)
         _radio.idle();
         return -1;
     }
+
+    // RSSI capturé immédiatement après sync (radio encore en RX)
+    if (rssiOut) *rssiOut = _radio.readRSSI();
 
     _syncCount++;
 
@@ -369,10 +371,9 @@ bool WMBus::poll(WMBusMode mode, uint32_t serialBCD, uint16_t mfr,
     }
 
     uint8_t rawBuf[256];
-    int rawLen = _receiveRaw(timeoutMs, rawBuf, sizeof(rawBuf));
+    int rawLen = _receiveRaw(timeoutMs, rawBuf, sizeof(rawBuf), &response.rssi);
     if (rawLen <= 0) return false;
 
-    response.rssi = _radio.readRSSI();
     _radio.idle();
 
     uint8_t decoded[192];

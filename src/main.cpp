@@ -43,6 +43,14 @@ static constexpr uint32_t PAUSE_MS   = (uint32_t)SCAN_PAUSE_SEC    * 1000UL;
 static constexpr uint8_t  R2_CHANNELS = 10;
 static constexpr uint32_t R2_PER_CHAN_MS = SCAN_R_MS / R2_CHANNELS;
 
+// Format B (ista/Qundis) plus probable → 1/3 Format A, 2/3 Format B
+static constexpr uint32_t SCAN_T_A_MS  = SCAN_T_MS  / 3;
+static constexpr uint32_t SCAN_T_B_MS  = SCAN_T_MS  - SCAN_T_A_MS;
+static constexpr uint32_t SCAN_C1_A_MS = SCAN_C1_MS / 3;
+static constexpr uint32_t SCAN_C1_B_MS = SCAN_C1_MS - SCAN_C1_A_MS;
+static constexpr uint32_t SCAN_S_A_MS  = SCAN_S_MS  / 3;
+static constexpr uint32_t SCAN_S_B_MS  = SCAN_S_MS  - SCAN_S_A_MS;
+
 struct MeterCfg {
     uint32_t serial;
 };
@@ -457,15 +465,15 @@ void setup()
     if (SCAN_T_MS > 0) {
         mqtt.publishScanStatus("scanning_t_a");
         scanPhase = SCAN_T_A;
-        phaseDeadline = millis() + SCAN_T_MS / 2;
+        phaseDeadline = millis() + SCAN_T_A_MS;
     } else if (SCAN_C1_MS > 0) {
         mqtt.publishScanStatus("scanning_c1a");
         scanPhase = SCAN_C1_A;
-        phaseDeadline = millis() + SCAN_C1_MS / 2;
+        phaseDeadline = millis() + SCAN_C1_A_MS;
     } else if (SCAN_S_MS > 0) {
         mqtt.publishScanStatus("scanning_s_a");
         scanPhase = SCAN_S_A;
-        phaseDeadline = millis() + SCAN_S_MS / 2;
+        phaseDeadline = millis() + SCAN_S_A_MS;
     } else if (SCAN_R_MS > 0) {
         r2Channel = 0;
         radio.configureWMBusRMode(0);
@@ -515,7 +523,7 @@ void loop()
             log_i("T-mode : switch sync word → Format B (0xF68D)");
             mqtt.publishScanStatus("scanning_t_b");
             scanPhase = SCAN_T_B;
-            phaseDeadline = millis() + SCAN_T_MS / 2;
+            phaseDeadline = millis() + SCAN_T_B_MS;
         }
         break;
     }
@@ -556,12 +564,12 @@ void loop()
                 resetRfDiag();
                 mqtt.publishScanStatus("scanning_c1a");
                 scanPhase = SCAN_C1_A;
-                phaseDeadline = millis() + SCAN_C1_MS / 2;
+                phaseDeadline = millis() + SCAN_C1_A_MS;
             } else if (SCAN_S_MS > 0) {
                 resetRfDiag();
                 mqtt.publishScanStatus("scanning_s_a");
                 scanPhase = SCAN_S_A;
-                phaseDeadline = millis() + SCAN_S_MS / 2;
+                phaseDeadline = millis() + SCAN_S_A_MS;
             } else if (SCAN_R_MS > 0) {
                 resetRfDiag();
                 r2Channel = 0;
@@ -597,7 +605,7 @@ void loop()
             log_i("C1-mode : switch sync word → Format B (0xF68D)");
             mqtt.publishScanStatus("scanning_c1b");
             scanPhase = SCAN_C1_B;
-            phaseDeadline = millis() + SCAN_C1_MS / 2;
+            phaseDeadline = millis() + SCAN_C1_B_MS;
         }
         break;
     }
@@ -622,7 +630,7 @@ void loop()
                 resetRfDiag();
                 mqtt.publishScanStatus("scanning_s_a");
                 scanPhase = SCAN_S_A;
-                phaseDeadline = millis() + SCAN_S_MS / 2;
+                phaseDeadline = millis() + SCAN_S_A_MS;
             } else if (SCAN_R_MS > 0) {
                 resetRfDiag();
                 r2Channel = 0;
@@ -658,7 +666,7 @@ void loop()
             log_i("S-mode : switch sync word → Format B (0xF68D)");
             mqtt.publishScanStatus("scanning_s_b");
             scanPhase = SCAN_S_B;
-            phaseDeadline = millis() + SCAN_S_MS / 2;
+            phaseDeadline = millis() + SCAN_S_B_MS;
         }
         break;
     }
@@ -795,7 +803,7 @@ void loop()
             resetRfDiag();
             mqtt.publishScanStatus("scanning_t_a");
             scanPhase = SCAN_T_A;
-            phaseDeadline = millis() + SCAN_T_MS / 2;
+            phaseDeadline = millis() + SCAN_T_A_MS;
         }
         break;
     }
