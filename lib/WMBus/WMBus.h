@@ -47,7 +47,8 @@ class WMBus {
 public:
     explicit WMBus(CC1101& radio);
 
-    bool listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out);
+    bool listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out,
+                uint16_t syncWord = 0);
 
     // Envoie REQ-UD2 puis écoute la réponse pendant timeoutMs.
     bool poll(WMBusMode mode, uint32_t serialBCD, uint16_t mfr,

@@ -69,9 +69,9 @@ struct MeterStat {
     uint32_t  wmbusSerialBCD;
     int8_t    bestRssi;
     uint16_t  count;
-    WMBusMode mode;
     char      mfr[4];
     uint8_t   deviceType;
+    char      phase[8];        // "T-A", "T-B", "C1-B", "S-A", etc.
 };
 static MeterStat meterStats[METER_COUNT] = {};
 static uint32_t totalPackets = 0;
@@ -87,6 +87,7 @@ enum ScanPhase : uint8_t {
 static ScanPhase  scanPhase = SCAN_T_A;
 static uint32_t   phaseDeadline = 0;
 static uint8_t    r2Channel = 0;       // canal R2 courant (0–9)
+static const char* phaseTag = "T-A";   // label lisible de la phase courante
 
 // Diagnostic RF — réinitialisé à chaque cycle de scan
 static int8_t   rfDiagRssiMin   = 0;
@@ -164,19 +165,19 @@ static void reportRfDiag(const char* tag) {
 
 static void showResultLed() {
     int  foundCount = 0;
-    bool sameMode   = true;
-    WMBusMode firstMode = WMBUS_T_MODE;
+    bool samePhase  = true;
+    const char* firstPhase = "";
     for (int i = 0; i < METER_COUNT; i++) {
         if (!meterStats[i].found) continue;
         foundCount++;
-        if (foundCount == 1) firstMode = meterStats[i].mode;
-        else if (meterStats[i].mode != firstMode) sameMode = false;
+        if (foundCount == 1) firstPhase = meterStats[i].phase;
+        else if (strcmp(meterStats[i].phase, firstPhase) != 0) samePhase = false;
     }
 
     static bool logged = false;
     if (!logged) {
         log_i("LED résultat : %d/%d trouvé(s)%s", foundCount, METER_COUNT,
-              foundCount > 1 ? (sameMode ? " (même mode)" : " (modes diff.)") : "");
+              foundCount > 1 ? (samePhase ? " (même phase)" : " (phases diff.)") : "");
         logged = true;
     }
 
@@ -199,7 +200,7 @@ static void showResultLed() {
     case 1:
         ledOff();                   nextMs = now + 500;
         if (++blinkDone < foundCount) { phase = 0; }
-        else { blinkDone = 0; phase = sameMode ? 5 : 2; }
+        else { blinkDone = 0; phase = samePhase ? 5 : 2; }
         break;
     case 2:                         nextMs = now + 200; phase = 3; break;
     case 3: ledOn();                nextMs = now + 150; phase = 4; break;
@@ -270,11 +271,8 @@ static void handlePacket(const WMBusPacket& pkt)
     char mfr[4];
     WMBus::decodeMfr(pkt.mField, mfr);
 
-    const char* modeName = (pkt.mode == WMBUS_T_MODE) ? "T" :
-                           (pkt.mode == WMBUS_C_MODE) ? "C1" :
-                           (pkt.mode == WMBUS_R_MODE) ? "R2" : "S";
-    log_i("wMBus [%s-mode] serial=%08lu mfr=%s type=0x%02X RSSI=%d CRC=%s",
-          modeName, pkt.serialBCD, mfr, pkt.deviceType, pkt.rssi,
+    log_i("wMBus [%s] serial=%08lu mfr=%s type=0x%02X RSSI=%d CRC=%s",
+          phaseTag, pkt.serialBCD, mfr, pkt.deviceType, pkt.rssi,
           pkt.crcOk ? "OK" : "FAIL");
 
     ledOn(); delay(50); ledOff();
@@ -288,43 +286,59 @@ static void handlePacket(const WMBusPacket& pkt)
         s.found = true;
         s.wmbusSerialBCD = pkt.serialBCD;
         s.count++;
-        s.mode = pkt.mode;
         s.deviceType = pkt.deviceType;
         memcpy(s.mfr, mfr, 4);
+        strncpy(s.phase, phaseTag, sizeof(s.phase) - 1);
+        s.phase[sizeof(s.phase) - 1] = '\0';
         if (s.count == 1 || pkt.rssi > s.bestRssi)
             s.bestRssi = pkt.rssi;
 
-        log_i("*********************************************");
-        log_i("  COMPTEUR %d DETECTE !", i + 1);
-        log_i("  serial=%08lu  mfr=%s  %s-mode", pkt.serialBCD, mfr, modeName);
-        log_i("  RSSI=%d dBm  CRC=%s  count=%u", pkt.rssi, pkt.crcOk ? "OK" : "FAIL", s.count);
+        log_i("##################################################");
+        log_i("##                                              ##");
+        log_i("##   >>> COMPTEUR %d DETECTE ! <<<               ##", i + 1);
+        log_i("##                                              ##");
+        log_i("##   Serial   : %08lu                       ##", pkt.serialBCD);
+        log_i("##   Fabricant: %s                             ##", mfr);
+        log_i("##   Phase    : %s                            ##", phaseTag);
+        log_i("##   RSSI     : %d dBm                        ##", pkt.rssi);
+        log_i("##   Type     : 0x%02X                          ##", pkt.deviceType);
+        log_i("##   CI       : 0x%02X                          ##", pkt.ciField);
+        log_i("##   CRC      : %s                            ##", pkt.crcOk ? "OK" : "FAIL");
+        log_i("##                                              ##");
 
         MeterReading reading;
         if (parser.parse(pkt, reading)) {
             if (reading.valid) {
-                log_i("  CONSOMMATION = %.3f m3", reading.total_m3);
+                log_i("##   CONSO    : %.3f m3                   ##", reading.total_m3);
                 if (reading.target_m3 > 0.0)
-                    log_i("  Releve precedent = %.3f m3", reading.target_m3);
+                    log_i("##   Precedent: %.3f m3                   ##", reading.target_m3);
                 mqtt.publishMeterReading(METERS[i].serial, reading, pkt);
             } else if (reading.encrypted && !reading.decrypted) {
-                log_w("  Trame chiffree — tentative cles connues...");
+                log_i("##   Trame CHIFFREE                         ##");
                 if (parser.tryKnownKeys(pkt, reading)) {
-                    log_i("  *** CLE AES TROUVEE pour compteur %d ! ***", i + 1);
-                    log_i("  *** Cle = %s ***", reading.foundKey);
-                    log_i("  CONSOMMATION = %.3f m3", reading.total_m3);
-                    if (reading.target_m3 > 0.0)
-                        log_i("  Releve precedent = %.3f m3", reading.target_m3);
+                    log_i("##   >>> CLE AES TROUVEE ! <<<              ##");
+                    log_i("##   Cle = %s  ##", reading.foundKey);
+                    log_i("##   CONSO = %.3f m3                      ##", reading.total_m3);
                     mqtt.publishKeyFound(METERS[i].serial, reading.foundKey);
                     mqtt.publishMeterReading(METERS[i].serial, reading, pkt);
                 } else {
-                    log_w("  Aucune cle connue ne fonctionne — cle individuelle requise");
+                    log_w("##   Aucune cle connue — cle requise        ##");
                 }
             } else {
-                log_w("  Payload non decode");
+                log_w("##   Payload non decode                     ##");
             }
         }
 
-        log_i("*********************************************");
+        log_i("##                                              ##");
+        log_i("##################################################");
+
+        // Hex dump des premiers octets pour analyse
+        char hex[128];
+        int hLen = 0;
+        int show = (pkt.dataLen > 30) ? 30 : pkt.dataLen;
+        for (int j = 0; j < show && hLen < 120; j++)
+            hLen += snprintf(hex + hLen, sizeof(hex) - hLen, "%02X ", pkt.data[j]);
+        log_i("RAW [%d octets]: %s", pkt.dataLen, hex);
 
         ledOn(); delay(500); ledOff();
 
@@ -333,9 +347,9 @@ static void handlePacket(const WMBusPacket& pkt)
 
     mqtt.publishScanPacket(pkt, totalPackets);
 
-    // Arrêt immédiat dès qu'un compteur configuré est détecté
     if (matched && scanPhase != SCAN_DONE) {
-        log_i("=== Compteur détecté — scan terminé ===");
+        log_i("=== SCAN TERMINE — phase gagnante : %s ===", phaseTag);
+        log_i("=== Pour cibler ce mode, configurer uniquement cette phase ===");
         publishResults();
         scanPhase = SCAN_DONE;
     }
@@ -379,7 +393,7 @@ static void publishResults()
         if (!meterStats[i].found) continue;
 
         snprintf(topic, sizeof(topic), "%s/scan/%s/mode", MQTT_BASE_TOPIC, serial);
-        mqtt.publish(topic, meterStats[i].mode == WMBUS_T_MODE ? "T-mode" : "S-mode", true);
+        mqtt.publish(topic, meterStats[i].phase, true);
 
         snprintf(topic, sizeof(topic), "%s/scan/%s/rssi", MQTT_BASE_TOPIC, serial);
         snprintf(payload, sizeof(payload), "%d", (int)meterStats[i].bestRssi);
@@ -464,26 +478,26 @@ void setup()
 
     if (SCAN_T_MS > 0) {
         mqtt.publishScanStatus("scanning_t_a");
-        scanPhase = SCAN_T_A;
+        scanPhase = SCAN_T_A; phaseTag = "T-A";
         phaseDeadline = millis() + SCAN_T_A_MS;
     } else if (SCAN_C1_MS > 0) {
         mqtt.publishScanStatus("scanning_c1a");
-        scanPhase = SCAN_C1_A;
+        scanPhase = SCAN_C1_A; phaseTag = "C1-A";
         phaseDeadline = millis() + SCAN_C1_A_MS;
     } else if (SCAN_S_MS > 0) {
         mqtt.publishScanStatus("scanning_s_a");
-        scanPhase = SCAN_S_A;
+        scanPhase = SCAN_S_A; phaseTag = "S-A";
         phaseDeadline = millis() + SCAN_S_A_MS;
     } else if (SCAN_R_MS > 0) {
         r2Channel = 0;
         radio.configureWMBusRMode(0);
         mqtt.publishScanStatus("scanning_r2a");
         log_i("--- Début scan R2-mode (10 canaux × %lus) ---", R2_PER_CHAN_MS / 1000);
-        scanPhase = SCAN_R;
+        scanPhase = SCAN_R; phaseTag = "R2";
         phaseDeadline = millis() + R2_PER_CHAN_MS;
     } else {
         mqtt.publishScanStatus("pause");
-        scanPhase = SCAN_PAUSE;
+        scanPhase = SCAN_PAUSE; phaseTag = "PAUSE";
         phaseDeadline = millis() + PAUSE_MS;
     }
 }
@@ -519,10 +533,9 @@ void loop()
         if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
             reportRfDiag("T-A");
             resetRfDiag();
-            radio.setSyncWord(0xF68D);
-            log_i("T-mode : switch sync word → Format B (0xF68D)");
+            log_i("T-mode : switch → Format B (0xF68D, NRZ/C-mode)");
             mqtt.publishScanStatus("scanning_t_b");
-            scanPhase = SCAN_T_B;
+            scanPhase = SCAN_T_B; phaseTag = "T-B";
             phaseDeadline = millis() + SCAN_T_B_MS;
         }
         break;
@@ -534,7 +547,7 @@ void loop()
         uint32_t listenMs = (remaining > 2000) ? 2000 : remaining;
 
         if (listenMs > 0) {
-            if (wmbus.listen(WMBUS_T_MODE, listenMs, pkt))
+            if (wmbus.listen(WMBUS_C_MODE, listenMs, pkt, 0xF68D))
                 handlePacket(pkt);
             sampleRfDiag();
         }
@@ -542,7 +555,6 @@ void loop()
         if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
             log_i("--- Fin scan T-mode (A+B) ---");
             reportRfDiag("T-B");
-            radio.setSyncWord(0x543D);
 
             // Test D : sniffer brut (une seule fois, si aucun paquet wMBus reçu)
             static bool rawSniffDone = false;
@@ -563,12 +575,12 @@ void loop()
             if (SCAN_C1_MS > 0) {
                 resetRfDiag();
                 mqtt.publishScanStatus("scanning_c1a");
-                scanPhase = SCAN_C1_A;
+                scanPhase = SCAN_C1_A; phaseTag = "C1-A";
                 phaseDeadline = millis() + SCAN_C1_A_MS;
             } else if (SCAN_S_MS > 0) {
                 resetRfDiag();
                 mqtt.publishScanStatus("scanning_s_a");
-                scanPhase = SCAN_S_A;
+                scanPhase = SCAN_S_A; phaseTag = "S-A";
                 phaseDeadline = millis() + SCAN_S_A_MS;
             } else if (SCAN_R_MS > 0) {
                 resetRfDiag();
@@ -576,11 +588,11 @@ void loop()
                 radio.configureWMBusRMode(0);
                 mqtt.publishScanStatus("scanning_r2a");
                 log_i("--- Début scan R2-mode (10 canaux × %lus) ---", R2_PER_CHAN_MS / 1000);
-                scanPhase = SCAN_R;
+                scanPhase = SCAN_R; phaseTag = "R2";
                 phaseDeadline = millis() + R2_PER_CHAN_MS;
             } else {
                 mqtt.publishScanStatus("pause");
-                scanPhase = SCAN_PAUSE;
+                scanPhase = SCAN_PAUSE; phaseTag = "PAUSE";
                 phaseDeadline = millis() + PAUSE_MS;
             }
         }
@@ -601,10 +613,9 @@ void loop()
         if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
             reportRfDiag("C1-A");
             resetRfDiag();
-            radio.setSyncWord(0xF68D);
-            log_i("C1-mode : switch sync word → Format B (0xF68D)");
+            log_i("C1-mode : switch → Format B (0xF68D)");
             mqtt.publishScanStatus("scanning_c1b");
-            scanPhase = SCAN_C1_B;
+            scanPhase = SCAN_C1_B; phaseTag = "C1-B";
             phaseDeadline = millis() + SCAN_C1_B_MS;
         }
         break;
@@ -616,7 +627,7 @@ void loop()
         uint32_t listenMs = (remaining > 2000) ? 2000 : remaining;
 
         if (listenMs > 0) {
-            if (wmbus.listen(WMBUS_C_MODE, listenMs, pkt))
+            if (wmbus.listen(WMBUS_C_MODE, listenMs, pkt, 0xF68D))
                 handlePacket(pkt);
             sampleRfDiag();
         }
@@ -624,12 +635,11 @@ void loop()
         if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
             log_i("--- Fin scan C1-mode (A+B) ---");
             reportRfDiag("C1-B");
-            radio.setSyncWord(0x543D);
             publishResults();
             if (SCAN_S_MS > 0) {
                 resetRfDiag();
                 mqtt.publishScanStatus("scanning_s_a");
-                scanPhase = SCAN_S_A;
+                scanPhase = SCAN_S_A; phaseTag = "S-A";
                 phaseDeadline = millis() + SCAN_S_A_MS;
             } else if (SCAN_R_MS > 0) {
                 resetRfDiag();
@@ -637,11 +647,11 @@ void loop()
                 radio.configureWMBusRMode(0);
                 mqtt.publishScanStatus("scanning_r2a");
                 log_i("--- Début scan R2-mode (10 canaux × %lus) ---", R2_PER_CHAN_MS / 1000);
-                scanPhase = SCAN_R;
+                scanPhase = SCAN_R; phaseTag = "R2";
                 phaseDeadline = millis() + R2_PER_CHAN_MS;
             } else {
                 mqtt.publishScanStatus("pause");
-                scanPhase = SCAN_PAUSE;
+                scanPhase = SCAN_PAUSE; phaseTag = "PAUSE";
                 phaseDeadline = millis() + PAUSE_MS;
             }
         }
@@ -662,10 +672,9 @@ void loop()
         if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
             reportRfDiag("S-A");
             resetRfDiag();
-            radio.setSyncWord(0xF68D);
-            log_i("S-mode : switch sync word → Format B (0xF68D)");
+            log_i("S-mode : switch → Format B (0xF68D)");
             mqtt.publishScanStatus("scanning_s_b");
-            scanPhase = SCAN_S_B;
+            scanPhase = SCAN_S_B; phaseTag = "S-B";
             phaseDeadline = millis() + SCAN_S_B_MS;
         }
         break;
@@ -677,7 +686,7 @@ void loop()
         uint32_t listenMs = (remaining > 2000) ? 2000 : remaining;
 
         if (listenMs > 0) {
-            if (wmbus.listen(WMBUS_S_MODE, listenMs, pkt))
+            if (wmbus.listen(WMBUS_S_MODE, listenMs, pkt, 0xF68D))
                 handlePacket(pkt);
             sampleRfDiag();
         }
@@ -685,11 +694,10 @@ void loop()
         if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
             log_i("--- Fin scan S-mode (A+B) ---");
             reportRfDiag("S-B");
-            radio.setSyncWord(0x7696);
             publishResults();
             log_i("--- Début polling REQ-UD2 ---");
             mqtt.publishScanStatus("polling");
-            scanPhase = SCAN_POLL;
+            scanPhase = SCAN_POLL; phaseTag = "POLL";
         }
         break;
     }
@@ -718,11 +726,11 @@ void loop()
                     radio.configureWMBusRMode(0);
                     mqtt.publishScanStatus("scanning_r2a");
                     log_i("--- Début scan R2-mode (10 canaux × %lus) ---", R2_PER_CHAN_MS / 1000);
-                    scanPhase = SCAN_R;
+                    scanPhase = SCAN_R; phaseTag = "R2";
                     phaseDeadline = millis() + R2_PER_CHAN_MS;
                 } else {
                     mqtt.publishScanStatus("pause");
-                    scanPhase = SCAN_PAUSE;
+                    scanPhase = SCAN_PAUSE; phaseTag = "PAUSE";
                     phaseDeadline = millis() + PAUSE_MS;
                 }
                 break;
@@ -780,7 +788,7 @@ void loop()
                 log_i("--- Fin scan R2-mode (10 canaux) ---");
                 publishResults();
                 mqtt.publishScanStatus("pause");
-                scanPhase = SCAN_PAUSE;
+                scanPhase = SCAN_PAUSE; phaseTag = "PAUSE";
                 phaseDeadline = millis() + PAUSE_MS;
             }
         }
@@ -802,7 +810,7 @@ void loop()
             log_i("--- Nouveau cycle de scan ---");
             resetRfDiag();
             mqtt.publishScanStatus("scanning_t_a");
-            scanPhase = SCAN_T_A;
+            scanPhase = SCAN_T_A; phaseTag = "T-A";
             phaseDeadline = millis() + SCAN_T_A_MS;
         }
         break;

@@ -48,7 +48,8 @@ void     WMBus::resetSyncCount()  { _syncCount = 0; }
 //  Écoute d'un paquet wMBus
 // ============================================================
 
-bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
+bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out,
+                   uint16_t syncWord)
 {
     memset(&out, 0, sizeof(out));
     out.mode = mode;
@@ -58,11 +59,14 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out)
         case WMBUS_T_MODE: _radio.configureWMBusTMode(); break;
         case WMBUS_C_MODE: _radio.configureWMBusCMode(); break;
         case WMBUS_S_MODE: _radio.configureWMBusSMode(); break;
-        case WMBUS_R_MODE: break; // R-mode config handled externally (per-channel)
+        case WMBUS_R_MODE: break;
         }
         _lastMode = mode;
         _configured = true;
     }
+
+    if (syncWord)
+        _radio.setSyncWord(syncWord);
 
     uint8_t rawBuf[256];
     int rawLen = _receiveRaw(timeoutMs, rawBuf, sizeof(rawBuf), &out.rssi);
