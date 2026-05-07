@@ -73,6 +73,7 @@ enum ScanPhase : uint8_t { SCAN_T, SCAN_C1, SCAN_S, SCAN_R, SCAN_POLL, SCAN_PAUS
 static ScanPhase  scanPhase = SCAN_T;
 static uint32_t   phaseDeadline = 0;
 static uint8_t    r2Channel = 0;       // canal R2 courant (0–9)
+static bool       tSyncB  = false;     // true = sync Format B actif sur T
 static bool       c1SyncB = false;     // true = sync Format B actif sur C1
 static bool       sSyncB  = false;     // true = sync Format B actif sur S
 
@@ -501,12 +502,23 @@ void loop()
         if (listenMs > 0) {
             if (wmbus.listen(WMBUS_T_MODE, listenMs, pkt))
                 handlePacket(pkt);
-            sampleRfDiag();  // RSSI + MARCSTATE après chaque fenêtre d'écoute
+            sampleRfDiag();
+        }
+
+        // Mi-temps : switch vers sync Format B (0xF68D)
+        if (!tSyncB && remaining <= SCAN_T_MS / 2) {
+            tSyncB = true;
+            radio.setSyncWord(0xF68D);
+            reportRfDiag("T-A");
+            resetRfDiag();
+            log_i("T-mode : switch sync word → Format B (0xF68D)");
         }
 
         if (scanPhase != SCAN_DONE && millis() >= phaseDeadline) {
             log_i("--- Fin scan T-mode ---");
-            reportRfDiag("T-mode");
+            reportRfDiag(tSyncB ? "T-B" : "T-A");
+            tSyncB = false;
+            radio.setSyncWord(0x543D);
 
             // Test D : sniffer brut (une seule fois, si aucun paquet wMBus reçu)
             static bool rawSniffDone = false;
