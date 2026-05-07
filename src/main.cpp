@@ -55,13 +55,39 @@ struct MeterCfg {
     uint32_t serial;
 };
 
-// ***** ATTENTION ****** BUG ICI ET A CORRIGER. Il faut autant d'entréesdans MeterCfg que 'METER_COUNT' 
+#ifndef METER_2_SERIAL
+#define METER_2_SERIAL 0UL
+#endif
+#ifndef METER_2_KEY
+#define METER_2_KEY ""
+#endif
+#ifndef METER_3_SERIAL
+#define METER_3_SERIAL 0UL
+#endif
+#ifndef METER_3_KEY
+#define METER_3_KEY ""
+#endif
+#ifndef METER_4_SERIAL
+#define METER_4_SERIAL 0UL
+#endif
+#ifndef METER_4_KEY
+#define METER_4_KEY ""
+#endif
+
+static_assert(METER_COUNT >= 1 && METER_COUNT <= 4,
+              "METER_COUNT doit etre entre 1 et 4");
+
 static const MeterCfg METERS[METER_COUNT] = {
     { METER_1_SERIAL },
 #if METER_COUNT >= 2
     { METER_2_SERIAL },
 #endif
-
+#if METER_COUNT >= 3
+    { METER_3_SERIAL },
+#endif
+#if METER_COUNT >= 4
+    { METER_4_SERIAL },
+#endif
 };
 
 struct MeterStat {
@@ -435,6 +461,12 @@ void setup()
     if (strlen(METER_1_KEY) == 32) parser.setKey(METER_1_SERIAL, METER_1_KEY);
 #if METER_COUNT >= 2
     if (strlen(METER_2_KEY) == 32) parser.setKey(METER_2_SERIAL, METER_2_KEY);
+#endif
+#if METER_COUNT >= 3
+    if (strlen(METER_3_KEY) == 32) parser.setKey(METER_3_SERIAL, METER_3_KEY);
+#endif
+#if METER_COUNT >= 4
+    if (strlen(METER_4_KEY) == 32) parser.setKey(METER_4_SERIAL, METER_4_KEY);
 #endif
 
     if (!radio.begin()) {

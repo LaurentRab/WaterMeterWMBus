@@ -38,6 +38,8 @@
 
 // --- Nombre de compteurs ------------------------------------
 // Adapter METER_COUNT au nombre reel de compteurs (1 a 4).
+// Seuls les compteurs definis ci-dessous seront actifs ;
+// les slots non definis sont automatiquement desactives (serial=0).
 #define METER_COUNT  2
 
 // --- Compteurs wMBus -----------------------------------------
@@ -49,8 +51,13 @@
 //  format EverBlu, entrez-les ici : le firmware fera un match
 //  partiel sur les 6 derniers chiffres du serial BCD 8 chiffres.
 //
+//  Ne definir que les compteurs necessaires (les autres auront
+//  un defaut de 0UL / "" et seront ignores).
+//
 #define METER_1_SERIAL  0UL        // 0 = desactive
 #define METER_2_SERIAL  0UL        // 0 = desactive
+// #define METER_3_SERIAL  0UL     // decommenter si METER_COUNT >= 3
+// #define METER_4_SERIAL  0UL     // decommenter si METER_COUNT >= 4
 
 // --- Cles AES-128 pour compteurs chiffres --------------------
 //
@@ -62,6 +69,8 @@
 //
 #define METER_1_KEY     ""
 #define METER_2_KEY     ""
+// #define METER_3_KEY     ""      // decommenter si METER_COUNT >= 3
+// #define METER_4_KEY     ""      // decommenter si METER_COUNT >= 4
 
 // --- Scan wMBus ----------------------------------------------
 // Duree d'ecoute par mode pendant chaque cycle de scan (secondes).
