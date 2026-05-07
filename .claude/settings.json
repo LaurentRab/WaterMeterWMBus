@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:stackforce.github.io)",
+      "WebFetch(domain:openenergymonitor.org)",
+      "WebFetch(domain:www.lstelcom.com)",
+      "WebFetch(domain:community.home-assistant.io)",
+      "Bash(python3 -c ' *)",
+      "WebFetch(domain:www.nettra.tech)",
+      "WebFetch(domain:www.multical.hu)",
+      "WebFetch(domain:www.axiomtek.com)",
+      "Bash(git checkout *)"
+    ]
+  }
+}
