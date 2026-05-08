@@ -227,55 +227,69 @@ Deux épisodes de déconnexion WiFi (AUTH_FAIL, HANDSHAKE_TIMEOUT) vers 21h et 2
 
 ---
 
+## Information terrain : relève sans technicien
+
+La relève des compteurs se fait **sans passage physique d'un technicien** au domicile. Les données de consommation sont collectées automatiquement. Cela implique :
+
+1. **Les modules radio sont actifs** — ils émettent effectivement, puisque les données arrivent au prestataire.
+2. **Un concentrateur ista est probablement installé** dans les parties communes de l'immeuble (cave, local technique, palier) et collecte les données de tous les compteurs.
+3. **L'hypothèse walk-by est largement affaiblie** — sans technicien, pas de trigger magnétique régulier.
+4. **Le protocole est probablement propriétaire** — 73h+ d'écoute wMBus standard = 0 paquet, alors que les compteurs communiquent.
+
+---
+
 ## Bilan — Ce qu'on sait avec certitude
 
 1. **La chaîne RF fonctionne** : sniffer brut capte ~9300 octets/2s, self-test 5/5, VCO lock OK, signaux tiers détectés jusqu'à -59 dBm.
 2. **Le CC1101 clone est RX-only** : TX bloqué en STARTCAL (MARCSTATE=0x08), polling REQ-UD2 impossible.
-3. **Les compteurs ista P/N 19399 n'émettent pas en wMBus standard** : 73h+ cumulées sur T-mode, C1-mode, S-mode et R2-mode (éliminé), Format A et Format B, sync words 0x7696 et 0xF68D → 0 paquet valide.
-4. **100% des syncs sont des faux positifs** : taux parfaitement corrélé à l'activité ISM ambiante (10x le jour vs nuit), concordance probabiliste exacte avec le modèle théorique.
-5. **Il y a de l'activité RF à 868 MHz dans l'immeuble** : signaux forts sporadiques, mais aucun utilisant le protocole wMBus.
+3. **Les compteurs communiquent** : la relève se fait sans passage de technicien, les données sont collectées automatiquement.
+4. **Les compteurs n'utilisent PAS le wMBus standard** : 73h+ cumulées sur T-mode, C1-mode, S-mode et R2-mode, Format A et Format B, sync words 0x7696 et 0xF68D → 0 paquet valide.
+5. **100% des syncs sont des faux positifs** : taux corrélé à l'activité ISM ambiante (10x le jour vs nuit), concordance probabiliste exacte avec le modèle théorique.
+6. **Il y a de l'activité RF à 868 MHz dans l'immeuble** : signaux forts sporadiques (jusqu'à -59 dBm), mais aucun utilisant le protocole wMBus standard.
 
 ## Hypothèses restantes (par probabilité décroissante)
 
-### H1 — Walk-by only (activation magnétique)
+### H1 — Protocole propriétaire ista
 
-Beaucoup de modules ista n'émettent pas spontanément. Ils restent en veille profonde et ne se réveillent que lorsqu'un technicien de relève passe avec un terminal portable équipé d'un aimant qui active un reed switch dans le module.
+C'est l'hypothèse la plus probable. ista utilise des systèmes propriétaires (symphonic sensor net, memonic 3) qui ne suivent pas le framing wMBus standard : sync word différent, modulation ou fréquence non-standard. Un concentrateur dans l'immeuble interroge les compteurs via ce protocole.
 
-**Test** : placer un aimant néodyme fort contre le module radio sur le compteur. Si une émission est déclenchée, le CC1101 la captera dans le mode correspondant.
+**Test** : RTL-SDR large bande pour identifier la fréquence et la modulation réelles. Localiser le concentrateur dans les parties communes pour identifier le modèle et le protocole.
 
-### H2 — Fréquence ou modulation non-standard
+### H2 — Fréquence hors bande 868 MHz
 
-Les modules ista pourraient émettre sur 433 MHz, 169 MHz, ou une sous-bande 868 MHz non couverte. Certains modèles ista utilisent des protocoles propriétaires.
+Les modules ista pourraient émettre sur 433 MHz, 169 MHz, ou une sous-bande 868 MHz non couverte par les modes standard.
 
-**Test** : RTL-SDR large bande (~15€) avec `rtl_433 -A` pour balayer 433–868 MHz et détecter toute émission pendant un trigger magnétique.
+**Test** : RTL-SDR spectrogramme sur 433–868 MHz.
 
-### H3 — Modules inactifs ou défaillants
+### H3 — Walk-by uniquement (peu probable)
 
-Les modules ont été installés en 2018–2019 (~7 ans). La batterie pourrait être épuisée, ou les modules pourraient ne jamais avoir été commissionnés.
+Malgré la relève sans technicien au domicile, il est possible qu'un opérateur passe dans les parties communes avec un terminal de lecture. Peu probable mais pas exclu.
 
-**Test** : inspection physique (LED, état visuel) + vérification auprès de la régie si un service de télérelève est actif.
+**Test** : aimant néodyme contre le module pour tester le trigger magnétique.
 
-### H4 — Protocole propriétaire ista non-wMBus
+### H4 — Modules défaillants (peu probable)
 
-Bien que les modules soient dans la famille wMBus, ista pourrait utiliser un protocole d'application propriétaire avec un sync word ou un framing différent du standard EN 13757-4.
+Les modules (installés 2018–2019, ~7 ans) pourraient avoir une batterie épuisée. Mais cela contredirait la relève fonctionnelle.
 
-**Test** : identifier le modèle exact via la plaque signalétique, rechercher dans la doc ista/OMS.
+**Test** : vérifier auprès de la régie que la télérelève est toujours active et à jour.
 
 ## Stratégie d'élimination — prochaines étapes
 
 ```
-Phase 5 — Investigation physique (prochaine)
+Phase 5 — Investigation physique + SDR (prochaine)
     │
-    ├─ Trigger magnétique (aimant néodyme contre le module)
-    │   ├─ Émission détectée → identifier mode, RÉSOLU
-    │   └─ Rien →
+    ├─ Localiser le concentrateur ista dans les parties communes
+    │   └─ Modèle, fréquence, protocole → oriente toute la suite
     │
-    ├─ RTL-SDR spectrogramme (433–868 MHz)
-    │   ├─ Signal trouvé → identifier fréquence/modulation
-    │   └─ Rien → modules probablement inactifs
+    ├─ RTL-SDR spectrogramme large bande (433–868 MHz)
+    │   ├─ Signal trouvé → identifier fréquence/modulation/protocole
+    │   └─ Rien sur aucune bande → H4 (modules défaillants)
     │
-    └─ Identification modèle exact (plaque signalétique P/N 19399)
-        └─ Recherche doc ista → protocole / fréquence / mode activation
+    ├─ Identification modèle exact (plaque signalétique P/N 19399)
+    │   └─ Recherche doc ista → protocole / fréquence
+    │
+    └─ Trigger magnétique (aimant néodyme) — test complémentaire
+        └─ Émission détectée → identifier mode
 ```
 
-L'approche logicielle (CC1101 écoute passive sur wMBus standard) est épuisée. La suite est physique : trigger magnétique, SDR large bande, et identification du modèle exact.
+L'approche logicielle (CC1101 écoute passive sur wMBus standard) est épuisée. La suite combine investigation physique (concentrateur, plaque signalétique) et RTL-SDR large bande pour identifier le protocole réel utilisé par ista dans cet immeuble.
