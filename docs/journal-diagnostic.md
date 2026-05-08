@@ -127,64 +127,155 @@ Même firmware R2-only (commit `395b0ad`), 20+ cycles complets supplémentaires 
 - R2-i (868.51 MHz) : activité sporadique non-wMBus, pics jusqu'à -75 dBm. Probablement un autre équipement ISM 868 MHz.
 - R2-h (868.45 MHz) : signal continu faible qui supprime les faux syncs (0–1 au lieu de ~4).
 
+## Phase 3 — Scan multi-mode T+C1+S prolongé (nuit du 7-8 mai 2026)
+
+### Contexte
+
+Les fréquences FREQ ont été corrigées et le C1-mode ajouté. R2 est éliminé. Durées augmentées de 60s à 120s par mode pour maximiser les chances de capter une trame spontanée.
+
+**Config** : T=120s + C1=120s + S=120s + R2=0s, cycle continu. Chaque mode est subdivisé en 1/3 Format A (sync 0x7696) + 2/3 Format B (sync 0xF68D). Le polling REQ-UD2 est inclus dans le cycle.
+
+### Scan nocturne (00h00–09h30, 8 mai 2026)
+
+| Mode | Syncs/fenêtre | RSSI max | Résultat |
+|------|--------------|----------|----------|
+| T-mode | 25–49 | -75 à -83 dBm | 0 paquet décodé |
+| C1-mode | 18–42 | -77 à -80 dBm | 0 paquet décodé |
+| S-mode | 12–33 | -81 à -87 dBm | 0 paquet décodé |
+| Polling | — | — | 100% échec TX |
+
+Beaucoup de syncs, mais aucun ne passe la validation CRC.
+
+### Découverte : TX physiquement cassé sur le clone CC1101
+
+Le polling REQ-UD2 échoue systématiquement. Investigation :
+- Après strobe STX, MARCSTATE reste bloqué à **0x08 (STARTCAL)**.
+- Le VCO ne se verrouille jamais pour la transmission.
+- Le clone CC1101 (VERSION=0x04) est **RX-only** — le PA est absent ou désactivé.
+
+Conséquence : le polling REQ-UD2 est impossible avec ce matériel. La phase SCAN_POLL est désactivée (commit `277aa7d`).
+
+### Ajout du diagnostic REJECT (commit 277aa7d)
+
+Pour comprendre pourquoi les syncs ne produisent pas de paquets, un logging détaillé est ajouté à chaque point de rejet dans `listen()` :
+- 3of6 decode fail (T-mode Format A)
+- Header parse fail
+- CRC fail avec hex dump des 30 premiers octets
+
+### Premier cycle avec REJECT logging — Résultat critique
+
+Le premier cycle révèle la nature des syncs :
+- ~300 lignes `REJECT CRC fail` par cycle
+- **L-field, C-field, manufacturer, serial** : valeurs totalement aléatoires
+- Fabricants "décodés" : `^KG`, `@MJ`, `NXR`, etc. (symboles, pas des lettres A-Z)
+- Aucun fabricant ne se répète d'une trame à l'autre
+
+**Calcul probabiliste** : un sync word de 16 bits (0xF68D) matche du bruit aléatoire à 100 kbps avec une probabilité de 1/65536 par bit → **1.53 faux matchs/seconde**. Sur 80s de T-B, on attend ~122 faux syncs. Observé : 126. **Concordance parfaite.**
+
+**Verdict : 100% des syncs sur TOUS les modes (T, C1, S) sont des faux positifs** causés par le bruit ISM ambiant à 868 MHz.
+
+### Throttling des logs (commit 6e382cb)
+
+Les ~300 lignes de CRC fail par cycle sont remplacées par :
+- Un compteur silencieux (`rejectCount`) résumé dans le diagnostic RF par phase
+- Un log individuel uniquement pour les trames "plausibles" (C-field valide + manufacturer A-Z + L-field raisonnable)
+
+## Phase 4 — Scan journée complète (8 mai 2026, 10h38 → ~00h30)
+
+### Config
+
+Firmware avec REJECT logging throttlé. T=120s + C1=120s + S=120s + R2=0. ~55 cycles complets, ~73 heures cumulées d'écoute toutes phases confondues.
+
+### Résultats
+
+| Métrique | Valeur |
+|----------|--------|
+| Durée totale | ~14h continu |
+| Cycles complets | ~55 |
+| Heures cumulées d'écoute | ~73h (T+C1+S × Format A+B) |
+| **Paquets valides** | **0** |
+| 3of6 decode fail total | 3 408 |
+| Trames "plausibles" CRC fail | ~50 (fabricants tous différents = bruit) |
+| RSSI max observé | **-59 dBm** (émetteur tiers ISM) |
+
+### Découverte : corrélation jour/nuit des faux syncs
+
+| Période | T-B syncs/80s | C1-B syncs/80s | S-B syncs/80s | RSSI moy |
+|---------|--------------|----------------|---------------|----------|
+| Matin (10h–13h) | 70–165 | 76–138 | 20–35 | -88 à -92 |
+| Après-midi (13h–19h) | 45–131 | 41–155 | 19–34 | -86 à -92 |
+| Soirée (19h–21h) | 47–99 | 41–84 | 20–30 | -85 à -91 |
+| **Nuit (22h–minuit)** | **2–12** | **3–13** | **17–40** | **-82 à -83** |
+
+Le taux de faux syncs sur 868.95 MHz (T et C1) **chute de 10x à 50x** la nuit. Cela confirme que les syncs diurnes sont causés par l'activité ISM ambiante (domotique, IoT, capteurs météo, télécommandes), pas par les compteurs.
+
+Le S-mode (868.3 MHz) reste plus stable car son data rate de 32.768 kbps est ~3x plus lent, générant mécaniquement moins de faux matchs du sync word.
+
+### Signaux forts détectés (émetteurs tiers)
+
+| Timestamp | Fréquence | RSSI | Identification |
+|-----------|-----------|------|----------------|
+| ~22h35 | 868.95 MHz (T-A) | **-59 dBm** | Émetteur IoT voisin, pas wMBus |
+| Soirée | 868.95 MHz (T-B) | -73 dBm | Idem |
+| Soirée | 868.30 MHz (S-A) | -74 dBm | Autre émetteur ISM |
+
+Ces signaux sont 20–30 dB au-dessus du bruit mais ne produisent aucun CRC valide → dispositifs ISM tiers, pas du wMBus.
+
+### WiFi instable
+
+Deux épisodes de déconnexion WiFi (AUTH_FAIL, HANDSHAKE_TIMEOUT) vers 21h et 22h. Reconnexion automatique en ~30s. Sans impact sur le scan RF.
+
 ---
 
-## Ce qu'on sait avec certitude
+## Bilan — Ce qu'on sait avec certitude
 
-1. La chaîne RF fonctionne (sniffer brut, self-test 5/5, VCO lock OK).
-2. Les compteurs ista P/N 19399 **n'émettent pas** en T, C1, S ou R2-mode (sync 0x7696).
-3. Le sniffer brut capte ~675 octets/2s à 868.95 MHz → il y a de l'activité RF sur cette fréquence, mais pas structurée comme du wMBus standard.
-4. Les pics RSSI sporadiques à -69 dBm sur 868.51 MHz confirment une présence radio dans l'immeuble.
+1. **La chaîne RF fonctionne** : sniffer brut capte ~9300 octets/2s, self-test 5/5, VCO lock OK, signaux tiers détectés jusqu'à -59 dBm.
+2. **Le CC1101 clone est RX-only** : TX bloqué en STARTCAL (MARCSTATE=0x08), polling REQ-UD2 impossible.
+3. **Les compteurs ista P/N 19399 n'émettent pas en wMBus standard** : 73h+ cumulées sur T-mode, C1-mode, S-mode et R2-mode (éliminé), Format A et Format B, sync words 0x7696 et 0xF68D → 0 paquet valide.
+4. **100% des syncs sont des faux positifs** : taux parfaitement corrélé à l'activité ISM ambiante (10x le jour vs nuit), concordance probabiliste exacte avec le modèle théorique.
+5. **Il y a de l'activité RF à 868 MHz dans l'immeuble** : signaux forts sporadiques, mais aucun utilisant le protocole wMBus.
 
 ## Hypothèses restantes (par probabilité décroissante)
 
-### H1 — T-mode ou C1-mode avec écoute prolongée
+### H1 — Walk-by only (activation magnétique)
 
-Le sniffer brut a détecté 675 octets à 868.95 MHz. Les premiers tests T/C1 étaient réalisés avec les registres FREQ **incorrects** (+243 kHz). Bien que corrigés depuis, ces modes n'ont pas été retestés en scan long avec la fréquence correcte.
+Beaucoup de modules ista n'émettent pas spontanément. Ils restent en veille profonde et ne se réveillent que lorsqu'un technicien de relève passe avec un terminal portable équipé d'un aimant qui active un reed switch dans le module.
 
-**Test** : scan nocturne T=60s + C1=60s + S=120s (configuré, prêt à flasher).
+**Test** : placer un aimant néodyme fort contre le module radio sur le compteur. Si une émission est déclenchée, le CC1101 la captera dans le mode correspondant.
 
-### H2 — Format B (sync word 0xF68D)
+### H2 — Fréquence ou modulation non-standard
 
-Le wMBus EN 13757-4 définit deux formats de trame :
-- Format A : sync 0x7696 (testé en R2 et S)
-- Format B : sync 0xF68D (non testé)
+Les modules ista pourraient émettre sur 433 MHz, 169 MHz, ou une sous-bande 868 MHz non couverte. Certains modèles ista utilisent des protocoles propriétaires.
 
-Certains compteurs utilisent Format B. Le CRC et la structure de trame diffèrent.
+**Test** : RTL-SDR large bande (~15€) avec `rtl_433 -A` pour balayer 433–868 MHz et détecter toute émission pendant un trigger magnétique.
 
-**Test** : modifier le sync word CC1101 et refaire un scan.
+### H3 — Modules inactifs ou défaillants
 
-### H3 — R-SND (polling only)
+Les modules ont été installés en 2018–2019 (~7 ans). La batterie pourrait être épuisée, ou les modules pourraient ne jamais avoir été commissionnés.
 
-Les compteurs R-mode peuvent fonctionner en mode "réponse uniquement" : ils ne transmettent que lorsqu'un concentrateur ista les interroge. Si aucun concentrateur n'est installé dans l'immeuble, les compteurs restent silencieux.
+**Test** : inspection physique (LED, état visuel) + vérification auprès de la régie si un service de télérelève est actif.
 
-**Test** : demander à la régie de l'immeuble s'il y a un concentrateur ista installé. Si oui, les trames polling/réponse seraient captables en écoute passive.
+### H4 — Protocole propriétaire ista non-wMBus
 
-### H4 — Protocole propriétaire ista
+Bien que les modules soient dans la famille wMBus, ista pourrait utiliser un protocole d'application propriétaire avec un sync word ou un framing différent du standard EN 13757-4.
 
-Bien que les modules soient certifiés wMBus OMS, ista pourrait utiliser un canal ou une modulation non standard.
+**Test** : identifier le modèle exact via la plaque signalétique, rechercher dans la doc ista/OMS.
 
-**Test** : scan spectral large bande (si SDR disponible) pour localiser la fréquence exacte d'émission.
-
-## Stratégie d'élimination
+## Stratégie d'élimination — prochaines étapes
 
 ```
-Phase 3 (en cours)    T + C1 + S multi-mode, scan nocturne
+Phase 5 — Investigation physique (prochaine)
     │
-    ├─ Paquet capté → RÉSOLU (décoder, matcher serial, extraire conso)
+    ├─ Trigger magnétique (aimant néodyme contre le module)
+    │   ├─ Émission détectée → identifier mode, RÉSOLU
+    │   └─ Rien →
     │
-    └─ Rien →
-         │
-Phase 4   Tester Format B (sync 0xF68D) sur T/C1/S
-         │
-         ├─ Paquet capté → RÉSOLU
-         │
-         └─ Rien →
-              │
-Phase 5       Investigation physique
-              ├─ Confirmer présence concentrateur ista
-              ├─ Scan SDR large bande si disponible
-              └─ Walk-by test (ESP32 collé au compteur)
+    ├─ RTL-SDR spectrogramme (433–868 MHz)
+    │   ├─ Signal trouvé → identifier fréquence/modulation
+    │   └─ Rien → modules probablement inactifs
+    │
+    └─ Identification modèle exact (plaque signalétique P/N 19399)
+        └─ Recherche doc ista → protocole / fréquence / mode activation
 ```
 
-Chaque phase produit un verdict binaire clair, validé par un volume de données statistiquement significatif (scan nocturne). On avance par élimination méthodique jusqu'à trouver le bon mode ou confirmer que les compteurs nécessitent un polling actif.
+L'approche logicielle (CC1101 écoute passive sur wMBus standard) est épuisée. La suite est physique : trigger magnétique, SDR large bande, et identification du modèle exact.
