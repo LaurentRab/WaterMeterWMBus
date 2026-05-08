@@ -57,6 +57,8 @@ public:
 
     uint32_t syncCount() const;
     void     resetSyncCount();
+    uint32_t rejectCount() const;
+    void     resetRejectCount();
 
     static void decodeMfr(uint16_t mField, char out[4]);
     static uint32_t bcdToUint32(const uint8_t* bcd, uint8_t len);
@@ -67,6 +69,7 @@ private:
     WMBusMode _lastMode = WMBUS_T_MODE;
     bool      _configured = false;
     uint32_t  _syncCount = 0;
+    uint32_t  _rejectCrcCount = 0;
 
     static volatile TaskHandle_t _rxTaskHandle;
     static void IRAM_ATTR _onGDO0ISR();
