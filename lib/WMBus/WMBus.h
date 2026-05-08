@@ -75,4 +75,5 @@ private:
     bool _decode3of6(const uint8_t* raw, uint16_t rawBits, uint8_t* out, uint8_t& outLen);
     bool _parseHeader(const uint8_t* data, uint8_t len, WMBusPacket& pkt);
     static uint16_t _crc16EN13757(const uint8_t* data, uint8_t len);
+    static void _hexDump(const char* prefix, const uint8_t* data, uint8_t len);
 };

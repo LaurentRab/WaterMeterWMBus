@@ -88,9 +88,11 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out,
             static uint16_t failCount = 0;
             static uint32_t lastLog = 0;
             failCount++;
-            if (millis() - lastLog > 300000) {
+            if (millis() - lastLog > 60000) {
                 lastLog = millis();
-                log_d("3of6 bruit: %u faux syncs depuis boot", failCount);
+                log_w("REJECT 3of6 decode fail (%u total) rawLen=%d RSSI=%d",
+                      failCount, rawLen, out.rssi);
+                _hexDump("  raw", rawBuf, rawLen > 20 ? 20 : rawLen);
             }
             return false;
         }
@@ -116,6 +118,9 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out,
                 }
             }
         }
+        log_w("REJECT header parse fail: rawLen=%d decodedLen=%d RSSI=%d",
+              rawLen, decodedLen, out.rssi);
+        _hexDump("  decoded", decoded, decodedLen > 20 ? 20 : decodedLen);
         return false;
     }
 
@@ -138,28 +143,27 @@ bool WMBus::listen(WMBusMode mode, uint32_t timeoutMs, WMBusPacket& out,
 parsed:
 
     if (!out.crcOk) {
-        if (mode == WMBUS_R_MODE) {
-            bool plausible = out.lField >= 0x0A && out.lField <= 0x80
-                          && (out.cField == 0x44 || out.cField == 0x46);
-            if (plausible) {
-                char mfr[4];
-                decodeMfr(out.mField, mfr);
-                uint16_t crcCalc = _crc16EN13757(decoded, 10);
-                uint16_t crcRecv = (decodedLen >= 12)
-                    ? ((uint16_t)decoded[10] << 8) | decoded[11] : 0;
-                char hex[64];
-                int hLen = 0;
-                int show = (decodedLen > 20) ? 20 : decodedLen;
-                for (int i = 0; i < show && hLen < 60; i++)
-                    hLen += snprintf(hex + hLen, sizeof(hex) - hLen,
-                                     "%02X ", decoded[i]);
-                log_w("R2 candidate: L=%02X C=%02X M=%s ser=%08lu "
-                      "dev=%02X CRC=%04X/%04X", out.lField, out.cField,
-                      mfr, out.serialBCD, out.deviceType, crcCalc, crcRecv);
-                log_w("  %s", hex);
-            }
+        char mfr[4];
+        decodeMfr(out.mField, mfr);
+        uint16_t crcCalc = _crc16EN13757(decoded, 10);
+        uint16_t crcRecv = (decodedLen >= 12)
+            ? ((uint16_t)decoded[10] << 8) | decoded[11] : 0;
+
+        bool plausible = out.lField >= 0x0A && out.lField <= 0x80
+                      && (out.cField == 0x44 || out.cField == 0x46
+                       || out.cField == 0x7A || out.cField == 0x72);
+
+        if (plausible) {
+            log_w("REJECT CRC fail (plausible): L=%02X C=%02X M=%s ser=%08lu "
+                  "dev=%02X ver=%02X CRC=%04X/%04X RSSI=%d",
+                  out.lField, out.cField, mfr, out.serialBCD,
+                  out.deviceType, out.version, crcCalc, crcRecv, out.rssi);
+            _hexDump("  frame", decoded, decodedLen > 30 ? 30 : decodedLen);
         } else {
-            log_d("CRC mismatch — dropped");
+            log_w("REJECT CRC fail: L=%02X C=%02X M=%s ser=%08lu RSSI=%d "
+                  "CRC=%04X/%04X",
+                  out.lField, out.cField, mfr, out.serialBCD, out.rssi,
+                  crcCalc, crcRecv);
         }
         return false;
     }
@@ -338,6 +342,15 @@ uint16_t WMBus::_crc16EN13757(const uint8_t* data, uint8_t len)
 // ============================================================
 //  Utilitaires
 // ============================================================
+
+void WMBus::_hexDump(const char* prefix, const uint8_t* data, uint8_t len)
+{
+    char hex[96];
+    int pos = 0;
+    for (uint8_t i = 0; i < len && pos < 90; i++)
+        pos += snprintf(hex + pos, sizeof(hex) - pos, "%02X ", data[i]);
+    log_w("%s %s", prefix, hex);
+}
 
 void WMBus::decodeMfr(uint16_t mField, char out[4])
 {

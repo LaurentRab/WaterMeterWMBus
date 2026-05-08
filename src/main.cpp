@@ -727,9 +727,11 @@ void loop()
             log_i("--- Fin scan S-mode (A+B) ---");
             reportRfDiag("S-B");
             publishResults();
-            log_i("--- Début polling REQ-UD2 ---");
-            mqtt.publishScanStatus("polling");
-            scanPhase = SCAN_POLL; phaseTag = "POLL";
+            // Polling désactivé : clone CC1101 (VERSION=0x04) bloqué en STARTCAL,
+            // TX impossible. Passe directement en pause pour maximiser l'écoute.
+            mqtt.publishScanStatus("pause");
+            scanPhase = SCAN_PAUSE; phaseTag = "PAUSE";
+            phaseDeadline = millis() + PAUSE_MS;
         }
         break;
     }
