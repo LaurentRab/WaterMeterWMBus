@@ -227,6 +227,16 @@ Deux épisodes de déconnexion WiFi (AUTH_FAIL, HANDSHAKE_TIMEOUT) vers 21h et 2
 
 ---
 
+## Test 433 MHz (protocole EverBlu)
+
+Un test antérieur avec un CC1101 et une antenne 433 MHz adaptée a tenté de capter les compteurs via le protocole EverBlu (utilisé par Itron/Cyble). Résultat : **aucune réponse des compteurs ista**.
+
+Le protocole EverBlu repose sur un polling actif (wake-up + request), et cette approche a fonctionné sur des compteurs Itron. Le fait que ça ne fonctionne pas sur les modules ista confirme qu'ils utilisent un protocole différent — ni wMBus standard, ni EverBlu.
+
+**433 MHz éliminé.**
+
+---
+
 ## Information terrain : relève sans technicien
 
 La relève des compteurs se fait **sans passage physique d'un technicien** au domicile. Les données de consommation sont collectées automatiquement. Cela implique :
@@ -243,9 +253,11 @@ La relève des compteurs se fait **sans passage physique d'un technicien** au do
 1. **La chaîne RF fonctionne** : sniffer brut capte ~9300 octets/2s, self-test 5/5, VCO lock OK, signaux tiers détectés jusqu'à -59 dBm.
 2. **Le CC1101 clone est RX-only** : TX bloqué en STARTCAL (MARCSTATE=0x08), polling REQ-UD2 impossible.
 3. **Les compteurs communiquent** : la relève se fait sans passage de technicien, les données sont collectées automatiquement.
-4. **Les compteurs n'utilisent PAS le wMBus standard** : 73h+ cumulées sur T-mode, C1-mode, S-mode et R2-mode, Format A et Format B, sync words 0x7696 et 0xF68D → 0 paquet valide.
-5. **100% des syncs sont des faux positifs** : taux corrélé à l'activité ISM ambiante (10x le jour vs nuit), concordance probabiliste exacte avec le modèle théorique.
-6. **Il y a de l'activité RF à 868 MHz dans l'immeuble** : signaux forts sporadiques (jusqu'à -59 dBm), mais aucun utilisant le protocole wMBus standard.
+4. **Les compteurs n'utilisent PAS le wMBus standard 868 MHz** : 73h+ cumulées sur T, C1, S et R2-mode, Format A et Format B, sync words 0x7696 et 0xF68D → 0 paquet valide.
+5. **Les compteurs n'utilisent PAS le protocole EverBlu 433 MHz** : testé avec CC1101 + antenne 433 MHz adaptée → 0 réponse.
+6. **100% des syncs sont des faux positifs** : taux corrélé à l'activité ISM ambiante (10x le jour vs nuit), concordance probabiliste exacte avec le modèle théorique.
+7. **Il y a de l'activité RF à 868 MHz dans l'immeuble** : signaux forts sporadiques (jusqu'à -59 dBm), mais aucun utilisant un protocole standard connu.
+8. **Le système ista P/N 19399 est de type "radio net 3" / "Symphonie"** : bidirectionnel, request/response, protocole propriétaire.
 
 ## Hypothèses restantes (par probabilité décroissante)
 
@@ -255,11 +267,11 @@ C'est l'hypothèse la plus probable. ista utilise des systèmes propriétaires (
 
 **Test** : RTL-SDR large bande pour identifier la fréquence et la modulation réelles. Localiser le concentrateur dans les parties communes pour identifier le modèle et le protocole.
 
-### H2 — Fréquence hors bande 868 MHz
+### H2 — Fréquence hors bande
 
-Les modules ista pourraient émettre sur 433 MHz, 169 MHz, ou une sous-bande 868 MHz non couverte par les modes standard.
+~~433 MHz (EverBlu)~~ éliminé. Reste possible : 169 MHz (bande SRD longue portée, utilisée par certains systèmes de comptage) ou sous-bande 868 MHz non couverte par les modes wMBus standard.
 
-**Test** : RTL-SDR spectrogramme sur 433–868 MHz.
+**Test** : RTL-SDR spectrogramme large bande.
 
 ### H3 — Walk-by uniquement (peu probable)
 
@@ -273,23 +285,66 @@ Les modules (installés 2018–2019, ~7 ans) pourraient avoir une batterie épui
 
 **Test** : vérifier auprès de la régie que la télérelève est toujours active et à jour.
 
-## Stratégie d'élimination — prochaines étapes
+## Plans d'action — Phase 5
+
+Tous les protocoles radio standard sont éliminés (wMBus 868 MHz + EverBlu 433 MHz). Les compteurs communiquent via un protocole propriétaire ista. Deux approches complémentaires :
+
+### Plan A — RTL-SDR : écouter sans a priori (prioritaire)
+
+**Objectif** : identifier la fréquence, la modulation et le timing des échanges entre le concentrateur et les compteurs, sans aucune hypothèse sur le protocole.
+
+**Matériel** : clé RTL-SDR v3 ou v4 (~15–25€) + antenne large bande fournie.
+
+**Étapes** :
+
+1. **Balayage spectral** avec `rtl_power` sur 150–900 MHz pendant 24h, placé près d'un compteur.
+   ```
+   rtl_power -f 150M:900M:100k -g 40 -i 10 -e 24h scan.csv
+   ```
+   Visualiser avec `heatmap.py` → identifier toute raie d'émission périodique qui n'est pas du bruit ISM ambiant.
+
+2. **Écoute ciblée** avec `rtl_433 -A` (mode analyse, tous protocoles) sur les bandes identifiées. `rtl_433` connaît 200+ protocoles dont certains ista — il pourrait décoder automatiquement.
+
+3. **Capture IQ brute** avec `rtl_sdr` sur la fréquence identifiée pour analyse fine de la modulation (FSK params, data rate, sync word) dans GNU Radio ou Inspectrum.
+
+**Critère de succès** : on voit un signal périodique corrélé à la position du compteur. Même sans décodage, la fréquence et la modulation identifiées permettent de reconfigurer le CC1101.
+
+### Plan B — Remonter la chaîne physique : trouver le concentrateur
+
+**Objectif** : identifier le modèle exact du concentrateur ista installé dans l'immeuble. Son modèle révèle directement le protocole, la fréquence et le mode de communication.
+
+**Étapes** :
+
+1. **Inspecter les parties communes** : cave, local technique, gaine technique, palier. Chercher un boîtier ista fixé au mur avec une antenne (souvent un boîtier gris/blanc avec le logo ista, ~20×15 cm).
+
+2. **Photographier la plaque** : modèle, P/N, fréquence (souvent indiquée). Les concentrateurs courants ista sont :
+   - **memonic 3** : 868 MHz, protocole propriétaire "Symphonie"
+   - **radio net 3** : 868 MHz, bidirectionnel
+   - **Sensus/Xylem** (si sous-traitance) : potentiellement 169 MHz
+
+3. **Demander à la régie/syndic** : quel prestataire fait la relève ? ista directement ? Techem ? Quel système est installé ? Y a-t-il un contrat de télérelève actif ?
+
+**Critère de succès** : on connaît le modèle du concentrateur → on peut rechercher le protocole exact dans la documentation technique ou les communautés de reverse-engineering.
+
+### Combinaison des deux plans
 
 ```
-Phase 5 — Investigation physique + SDR (prochaine)
-    │
-    ├─ Localiser le concentrateur ista dans les parties communes
-    │   └─ Modèle, fréquence, protocole → oriente toute la suite
-    │
-    ├─ RTL-SDR spectrogramme large bande (433–868 MHz)
-    │   ├─ Signal trouvé → identifier fréquence/modulation/protocole
-    │   └─ Rien sur aucune bande → H4 (modules défaillants)
-    │
-    ├─ Identification modèle exact (plaque signalétique P/N 19399)
-    │   └─ Recherche doc ista → protocole / fréquence
-    │
-    └─ Trigger magnétique (aimant néodyme) — test complémentaire
-        └─ Émission détectée → identifier mode
+Plan B (investigation physique)          Plan A (RTL-SDR)
+         │                                     │
+         ├─ Concentrateur trouvé               ├─ Signal périodique trouvé
+         │   → modèle, fréquence               │   → fréquence, modulation
+         │                                     │
+         └─────────────┬───────────────────────┘
+                       │
+              Reconfigurer CC1101 (ou SDR)
+              sur la bonne fréquence/modulation
+                       │
+              ┌────────┴────────┐
+              │                 │
+         Écoute passive    Polling actif
+         (si spontané)     (si request/response,
+                            nécessite CC1101 genuine
+                            pour TX)
 ```
 
-L'approche logicielle (CC1101 écoute passive sur wMBus standard) est épuisée. La suite combine investigation physique (concentrateur, plaque signalétique) et RTL-SDR large bande pour identifier le protocole réel utilisé par ista dans cet immeuble.
+**Note matérielle** : si le protocole s'avère être du request/response (probable pour ista radio net 3), il faudra un CC1101 **genuine TI** (VERSION=0x14) pour pouvoir émettre. Le clone actuel (VERSION=0x04) est RX-only.
