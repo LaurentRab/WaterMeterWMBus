@@ -239,12 +239,29 @@ Le protocole EverBlu repose sur un polling actif (wake-up + request), et cette a
 
 ## Information terrain : relève sans technicien
 
-La relève des compteurs se fait **sans passage physique d'un technicien** au domicile. Les données de consommation sont collectées automatiquement. Cela implique :
+La relève des compteurs individuels ista se fait **sans passage physique d'un technicien** au domicile. Les données de consommation sont collectées automatiquement. Cela implique :
 
-1. **Les modules radio sont actifs** — ils émettent effectivement, puisque les données arrivent au prestataire.
-2. **Un concentrateur ista est probablement installé** dans les parties communes de l'immeuble (cave, local technique, palier) et collecte les données de tous les compteurs.
-3. **L'hypothèse walk-by est largement affaiblie** — sans technicien, pas de trigger magnétique régulier.
-4. **Le protocole est probablement propriétaire** — 73h+ d'écoute wMBus standard = 0 paquet, alors que les compteurs communiquent.
+1. **Les modules radio ista sont actifs** — ils émettent effectivement, puisque les données arrivent au prestataire.
+2. **Un concentrateur ista est probablement installé** dans l'immeuble (local technique fermé) ou un système drive-by collecte depuis l'extérieur.
+3. **L'hypothèse walk-by avec trigger magnétique est largement affaiblie** — sans technicien, pas de trigger manuel régulier.
+4. **Le protocole est propriétaire** — 73h+ d'écoute wMBus standard = 0 paquet, alors que les compteurs communiquent.
+
+## Inspection parties communes (9 mai 2026)
+
+Le compteur d'eau **général** de l'immeuble (arrivée d'eau) est équipé d'un module radio **différent** des compteurs individuels :
+
+| Élément | Détail |
+|---------|--------|
+| Module radio | **CYBLE G3-TTR 868 MHz** |
+| Technologie | Birdz-Veolia G3 Technology |
+| Date | 01/2020, V1.1, IP68 |
+| Marquage | JB024 |
+
+Ce module Cyble G3 est un produit **Itron/Birdz** (filiale Veolia) — il n'a aucun rapport avec le système ista des compteurs individuels. Ce sont deux systèmes de télérelève indépendants :
+- **Compteur général** → Cyble G3-TTR (Birdz/Veolia) → distributeur d'eau
+- **Compteurs individuels** → ista radio P/N 19399 → répartition des charges (ista/syndic)
+
+**Aucun concentrateur ista n'a été trouvé** dans les parties communes accessibles. Il est soit dans un local fermé, soit le système ista utilise une collecte drive-by (véhicule dans la rue).
 
 ---
 
